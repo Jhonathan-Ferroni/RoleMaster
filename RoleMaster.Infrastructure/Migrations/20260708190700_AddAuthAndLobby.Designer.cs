@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using RoleMaster.Infrastructure.Data;
@@ -11,9 +12,11 @@ using RoleMaster.Infrastructure.Data;
 namespace RoleMaster.Infrastructure.Migrations
 {
     [DbContext(typeof(RoleMasterDbContext))]
-    partial class RoleMasterDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260708190700_AddAuthAndLobby")]
+    partial class AddAuthAndLobby
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder

@@ -43,6 +43,7 @@ appsettings.Local.json
 appsettings.*.Local.json
 appsettings.*.Development.json
 appsettings.json
+appsettings.Development.json
 *.Secrets.json
 launchSettings.json
 secrets.json
