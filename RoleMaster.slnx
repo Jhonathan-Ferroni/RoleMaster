@@ -2,4 +2,5 @@
   <Project Path="RoleMaster.API/RoleMaster.API.csproj" />
   <Project Path="RoleMaster.Core/RoleMaster.Core.csproj" />
   <Project Path="RoleMaster.Infrastructure/RoleMaster.Infrastructure.csproj" />
+  <Project Path="RoleMaster.Tests/RoleMaster.Tests.csproj" />
 </Solution>
