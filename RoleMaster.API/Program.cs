@@ -13,8 +13,21 @@ builder.Services.AddDbContext<RoleMasterDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
 
 // 1. ADICIONAR SERVIÇOS AO CONTAINER
-
 builder.Services.AddControllers();
+
+// === INÍCIO DA CONFIGURAÇÃO SEGURA DE CORS ===
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("PermitirReact", policy =>
+    {
+        // Trava o acesso exclusivamente para o seu frontend Vite. 
+        // Hackers hospedando clones da sua interface em outros domínios serão bloqueados pelo navegador.
+        policy.WithOrigins("http://localhost:5173")
+              .AllowAnyHeader()  // Permite enviarmos o cabeçalho Authorization (JWT) e o X-Tenant-ID
+              .AllowAnyMethod(); // Permite GET, POST, PUT, DELETE
+    });
+});
+// === FIM DA CONFIGURAÇÃO DE CORS ===
 
 // Configuração do JWT
 var jwtSettings = builder.Configuration.GetSection("Jwt");
@@ -89,6 +102,11 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
+
+// === APLICAÇÃO DO CORS ===
+// Deve obrigatoriamente ficar AQUI: após o Https e antes do Tenant/Auth.
+// Assim, a requisição OPTIONS (Preflight) do navegador consegue passar livremente.
+app.UseCors("PermitirReact");
 
 app.UseMiddleware<TenantMiddleware>();
 

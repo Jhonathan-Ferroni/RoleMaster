@@ -1,0 +1,6 @@
+@import "tailwindcss";
+
+/* Já deixamos um fundo escuro e texto claro pro nosso RPG */
+body {
+  @apply bg-zinc-900 text-zinc-100;
+}
