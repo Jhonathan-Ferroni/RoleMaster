@@ -1,11 +1,13 @@
 using System.Collections.Generic;
+using System.ComponentModel.DataAnnotations;
 
 namespace RoleMaster.Core.Entities;
 
 public class Mesa
 {
-    public string Id { get; set; } = string.Empty; // Usada como TenantId
+    
     public string Nome { get; set; } = string.Empty;
+    [Key]
     public string CodigoConvite { get; set; } = string.Empty;
     public int MestreId { get; set; }
 

@@ -27,16 +27,17 @@ public class MesasController : ControllerBase
 
     // 1. CRIAR UMA MESA (O usuário atual vira o Mestre)
     [HttpPost]
-    public async Task<IActionResult> CriarMesa([FromBody] string nomeMesa)
+    public async Task<IActionResult> CriarMesa([FromBody] CriarMesaDto dto) // Usa o DTO agora!
     {
-        var mestreId = ObterUsuarioIdLogado();
+        if (string.IsNullOrWhiteSpace(dto.Nome))
+            return BadRequest("O nome da mesa é obrigatório.");
 
-        // Gera um código de 6 caracteres aleatórios (Ex: 8F3A9C)
+        var mestreId = ObterUsuarioIdLogado();
         var codigoConvite = Guid.NewGuid().ToString("N").Substring(0, 6).ToUpper();
 
         var mesa = new Mesa
         {
-            Nome = nomeMesa,
+            Nome = dto.Nome,
             MestreId = mestreId,
             CodigoConvite = codigoConvite
         };
@@ -44,7 +45,31 @@ public class MesasController : ControllerBase
         _context.Mesas.Add(mesa);
         await _context.SaveChangesAsync();
 
-        return Ok(new { Mensagem = "Mesa criada!", Mesa = mesa });
+        return Ok(new
+        {
+            Mensagem = "Mesa criada!",
+            Mesa = new { mesa.Nome, mesa.CodigoConvite }
+        });
+    }
+
+    // 5. LISTAR MINHAS MESAS (Onde sou Mestre ou Jogador Aprovado)
+    [HttpGet]
+    public async Task<IActionResult> MinhasMesas()
+    {
+        var usuarioId = ObterUsuarioIdLogado();
+
+        var mesas = await _context.Mesas
+            .Where(m => m.MestreId == usuarioId ||
+                        _context.SolicitacoesMesa.Any(s => s.MesaId == m.CodigoConvite && s.UsuarioId == usuarioId && s.Status == StatusSolicitacao.Aprovada))
+            .Select(m => new
+            {
+                m.Nome,
+                m.CodigoConvite
+                // Projetamos apenas as strings que o frontend precisa, quebrando o loop infinito!
+            })
+            .ToListAsync();
+
+        return Ok(mesas);
     }
 
     // 2. SOLICITAR ENTRADA (O jogador usa o código do Mestre)
@@ -61,14 +86,14 @@ public class MesasController : ControllerBase
             return BadRequest("Você já é o mestre desta mesa.");
 
         var jaSolicitou = await _context.SolicitacoesMesa
-            .AnyAsync(s => s.MesaId == mesa.Id && s.UsuarioId == usuarioId);
+            .AnyAsync(s => s.MesaId == mesa.CodigoConvite && s.UsuarioId == usuarioId);
 
         if (jaSolicitou)
             return BadRequest("Você já enviou uma solicitação para esta mesa.");
 
         var solicitacao = new SolicitacaoMesa
         {
-            MesaId = mesa.Id,
+            MesaId = mesa.CodigoConvite,
             UsuarioId = usuarioId,
             Status = StatusSolicitacao.Pendente
         };
@@ -85,7 +110,7 @@ public class MesasController : ControllerBase
     {
         var mestreId = ObterUsuarioIdLogado();
 
-        var ehOMestre = await _context.Mesas.AnyAsync(m => m.Id == mesaId && m.MestreId == mestreId);
+        var ehOMestre = await _context.Mesas.AnyAsync(m => m.CodigoConvite == mesaId && m.MestreId == mestreId);
         if (!ehOMestre)
             return Forbid("Apenas o mestre pode ver as solicitações.");
 
@@ -124,4 +149,9 @@ public class MesasController : ControllerBase
 
         return Ok(aprovar ? "Jogador aprovado!" : "Jogador recusado.");
     }
+}
+
+public class CriarMesaDto
+{
+    public string Nome { get; set; } = string.Empty;
 }

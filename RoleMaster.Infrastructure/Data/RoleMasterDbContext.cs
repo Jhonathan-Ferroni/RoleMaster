@@ -15,8 +15,6 @@ public class RoleMasterDbContext : DbContext
         _tenantId = tenantProvider.GetTenantId() ?? string.Empty;
     }
 
-    // MAPEAR TODAS AS SUAS ENTIDADES AQUI
-    // (Ajustei de Personagem para Character para bater com o seu arquivo)
     public DbSet<Character> Characters { get; set; }
     public DbSet<Equipamento> Equipamentos { get; set; }
     public DbSet<Magia> Magias { get; set; }
@@ -48,8 +46,9 @@ public class RoleMasterDbContext : DbContext
         // Configuração para Mesa
         modelBuilder.Entity<Mesa>(entity =>
         {
-            entity.HasKey(m => m.Id);
-            entity.HasIndex(m => m.CodigoConvite).IsUnique();
+            // 1. Mudamos a Chave Primária para o Código de Convite
+            entity.HasKey(m => m.CodigoConvite);
+
             entity.Property(m => m.Nome).IsRequired();
             entity.Property(m => m.CodigoConvite).IsRequired();
 
@@ -63,7 +62,7 @@ public class RoleMasterDbContext : DbContext
         modelBuilder.Entity<SolicitacaoMesa>(entity =>
         {
             entity.HasKey(s => s.Id);
-            entity.Property(s => s.Status).HasConversion<string>(); // Salvar enum como string no BD
+            entity.Property(s => s.Status).HasConversion<string>();
 
             entity.HasOne(s => s.Usuario)
                 .WithMany(u => u.Solicitacoes)
@@ -77,7 +76,6 @@ public class RoleMasterDbContext : DbContext
         });
     }
 
-    // O SaveChangesAsync permanece igual, garantindo o TenantId para todas as tabelas
     public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
     {
         foreach (var entry in ChangeTracker.Entries<BaseEntity>())
