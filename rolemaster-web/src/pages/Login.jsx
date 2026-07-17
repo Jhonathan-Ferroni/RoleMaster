@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import { api } from "../services/api";
 
 export function Login() {
@@ -76,6 +76,15 @@ export function Login() {
           >
             Entrar na Taverna
           </button>
+          <p className="text-center text-zinc-400 mt-6 text-sm">
+            Ainda não tem uma conta?{" "}
+            <Link
+              to="/registro"
+              className="text-red-500 hover:text-red-400 font-semibold transition-colors"
+            >
+              Registre-se aqui
+            </Link>
+          </p>
         </form>
       </div>
     </div>

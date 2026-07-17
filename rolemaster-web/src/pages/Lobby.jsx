@@ -111,9 +111,17 @@ export function Lobby() {
       </header>
 
       <main className="max-w-6xl mx-auto">
-        <div className="flex justify-between items-center mb-6">
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
           <h2 className="text-2xl font-bold text-zinc-100">Suas Campanhas</h2>
-          <div className="space-x-4">
+
+          {/* Grupo de Botões Atualizado */}
+          <div className="flex flex-wrap gap-3">
+            <button
+              onClick={() => navigate("/criar-ficha")}
+              className="px-4 py-2 bg-emerald-700 hover:bg-emerald-600 text-white font-bold rounded-lg transition-colors shadow-lg border border-emerald-800"
+            >
+              🗡️ Criar Ficha
+            </button>
             <button
               onClick={handleSolicitarEntrada}
               className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-100 font-bold rounded-lg transition-colors shadow-lg border border-zinc-700"
@@ -140,22 +148,34 @@ export function Lobby() {
             {mesas.map((mesa) => (
               <div
                 key={mesa.codigoConvite || mesa.CodigoConvite}
-                className="bg-zinc-900 border border-zinc-800 rounded-xl p-6 shadow-lg hover:border-red-900/50 transition-colors"
+                className="bg-zinc-900 border border-zinc-800 rounded-xl p-6 shadow-lg hover:border-red-900/50 transition-colors flex flex-col justify-between"
               >
-                <div className="flex justify-between items-start mb-4">
-                  <h3 className="text-xl font-bold text-zinc-100">
-                    {mesa.nome || mesa.Nome}
-                  </h3>
-                  <span className="text-xs font-mono bg-zinc-950 text-zinc-400 px-2 py-1 rounded border border-zinc-800">
-                    ID: {mesa.codigoConvite || mesa.CodigoConvite}
-                  </span>
+                <div>
+                  <div className="flex justify-between items-start mb-4 gap-2">
+                    <div className="flex flex-col gap-2">
+                      <h3 className="text-xl font-bold text-zinc-100 leading-tight">
+                        {mesa.nome || mesa.Nome}
+                      </h3>
+
+                      {/* ETIQUETA DE MESTRE: Renderiza apenas se IsMestre for true */}
+                      {(mesa.isMestre || mesa.IsMestre) && (
+                        <span className="self-start text-[10px] uppercase tracking-wider font-bold bg-red-900/30 text-red-500 border border-red-900/50 px-2 py-0.5 rounded">
+                          Mestre
+                        </span>
+                      )}
+                    </div>
+
+                    <span className="text-xs font-mono bg-zinc-950 text-zinc-400 px-2 py-1 rounded border border-zinc-800 shrink-0">
+                      ID: {mesa.codigoConvite || mesa.CodigoConvite}
+                    </span>
+                  </div>
                 </div>
 
                 <button
                   onClick={() =>
                     acessarMesa(mesa.codigoConvite || mesa.CodigoConvite)
                   }
-                  className="w-full mt-4 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 font-semibold py-2 px-4 rounded transition-colors border border-zinc-700"
+                  className="w-full mt-6 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 font-semibold py-2 px-4 rounded transition-colors border border-zinc-700"
                 >
                   Entrar na Mesa
                 </button>

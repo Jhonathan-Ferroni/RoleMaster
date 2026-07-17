@@ -64,8 +64,9 @@ public class MesasController : ControllerBase
             .Select(m => new
             {
                 m.Nome,
-                m.CodigoConvite
+                m.CodigoConvite,
                 // Projetamos apenas as strings que o frontend precisa, quebrando o loop infinito!
+                IsMestre = m.MestreId == usuarioId
             })
             .ToListAsync();
 
@@ -148,6 +149,27 @@ public class MesasController : ControllerBase
         await _context.SaveChangesAsync();
 
         return Ok(aprovar ? "Jogador aprovado!" : "Jogador recusado.");
+    }
+
+    [HttpGet("{codigoConvite}")]
+    public async Task<IActionResult> ObterMesa(string codigoConvite)
+    {
+        var usuarioId = ObterUsuarioIdLogado();
+
+        var mesa = await _context.Mesas
+            .Where(m => m.CodigoConvite == codigoConvite)
+            .Select(m => new
+            {
+                m.Nome,
+                m.CodigoConvite,
+                IsMestre = m.MestreId == usuarioId
+            })
+            .FirstOrDefaultAsync();
+
+        if (mesa == null)
+            return NotFound("Mesa não encontrada na guilda.");
+
+        return Ok(mesa);
     }
 }
 

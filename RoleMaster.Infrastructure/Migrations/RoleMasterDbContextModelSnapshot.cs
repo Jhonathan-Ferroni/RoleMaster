@@ -349,6 +349,43 @@ namespace RoleMaster.Infrastructure.Migrations
                     b.ToTable("Mesas");
                 });
 
+            modelBuilder.Entity("RoleMaster.Core.Entities.MidiaCampanha", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("CaminhoServidor")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<DateTime>("DataExpiracao")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("MesaId")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("NomeArquivo")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("PublicId")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<int>("Tipo")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("MesaId");
+
+                    b.ToTable("MidiasCampanha");
+                });
+
             modelBuilder.Entity("RoleMaster.Core.Entities.SolicitacaoMesa", b =>
                 {
                     b.Property<int>("Id")
@@ -431,6 +468,17 @@ namespace RoleMaster.Infrastructure.Migrations
                         .IsRequired();
 
                     b.Navigation("Mestre");
+                });
+
+            modelBuilder.Entity("RoleMaster.Core.Entities.MidiaCampanha", b =>
+                {
+                    b.HasOne("RoleMaster.Core.Entities.Mesa", "Mesa")
+                        .WithMany()
+                        .HasForeignKey("MesaId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Mesa");
                 });
 
             modelBuilder.Entity("RoleMaster.Core.Entities.SolicitacaoMesa", b =>

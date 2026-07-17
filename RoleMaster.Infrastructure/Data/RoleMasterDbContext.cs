@@ -21,6 +21,7 @@ public class RoleMasterDbContext : DbContext
     public DbSet<Usuario> Usuarios { get; set; }
     public DbSet<Mesa> Mesas { get; set; }
     public DbSet<SolicitacaoMesa> SolicitacoesMesa { get; set; }
+    public DbSet<MidiaCampanha> MidiasCampanha { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

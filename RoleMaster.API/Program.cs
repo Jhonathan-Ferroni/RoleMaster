@@ -6,6 +6,7 @@ using RoleMaster.Infrastructure.Data;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
+using CloudinaryDotNet;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -87,6 +88,18 @@ builder.Services.AddSwaggerGen(c =>
 
 builder.Services.AddScoped<ITenantProvider, TenantProvider>();
 
+builder.Services.AddSignalR();
+
+var cloudinaryAccount = new Account(
+    builder.Configuration["Cloudinary:CloudName"],
+    builder.Configuration["Cloudinary:ApiKey"],
+    builder.Configuration["Cloudinary:ApiSecret"]
+);
+var cloudinary = new Cloudinary(cloudinaryAccount);
+builder.Services.AddSingleton(cloudinary);
+
+builder.Services.AddHostedService<RoleMaster.API.Workers.LimpadorDeMidiasWorker>();
+
 var app = builder.Build();
 
 // 2. CONFIGURAR O PIPELINE DE REQUISIÇÕES HTTP (MIDDLEWARES)
@@ -108,6 +121,8 @@ app.UseHttpsRedirection();
 // Assim, a requisição OPTIONS (Preflight) do navegador consegue passar livremente.
 app.UseCors("PermitirReact");
 
+app.UseStaticFiles(); // Libera a pasta wwwroot para acesso público via URL
+
 app.UseMiddleware<TenantMiddleware>();
 
 // É CRÍTICO ativar UseAuthentication antes de UseAuthorization
@@ -115,5 +130,7 @@ app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapControllers();
+
+app.MapHub<RoleMaster.API.Hubs.CampanhaHub>("/campanhaHub");
 
 app.Run();

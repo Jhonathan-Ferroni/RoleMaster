@@ -3,54 +3,57 @@ import { useNavigate } from "react-router-dom";
 import { api } from "../services/api";
 
 export function Campanha() {
+  const [mesa, setMesa] = useState(null);
   const [solicitacoes, setSolicitacoes] = useState([]);
   const navigate = useNavigate();
-
-  // Pegamos o ID da mesa que foi salvo quando clicamos em "Entrar na Mesa" no Lobby
   const tenantId = localStorage.getItem("tenantId");
 
   const carregarSolicitacoes = async () => {
     try {
-      // Bate na rota do Mestre para ver quem quer entrar
       const response = await api.get(`/mesas/${tenantId}/solicitacoes`);
       setSolicitacoes(response.data);
     } catch (error) {
-      // Se cair no catch, provavelmente é porque o usuário é um jogador e não o Mestre (o backend retorna Forbid 403)
-      console.log("Apenas o mestre visualiza convites pendentes.");
+      console.error("Erro ao buscar solicitações:", error);
+    }
+  };
+
+  const carregarMesa = async () => {
+    try {
+      const responseMesa = await api.get(`/mesas/${tenantId}`);
+      setMesa(responseMesa.data);
+
+      // Se for o mestre, já aproveitamos e carregamos as solicitações pendentes
+      if (responseMesa.data.isMestre) {
+        carregarSolicitacoes();
+      }
+    } catch (error) {
+      alert("Erro ao carregar a mesa. O feitiço foi dissipado.");
+      navigate("/lobby");
     }
   };
 
   useEffect(() => {
     if (!tenantId) {
-      // Se tentar acessar a url direto sem escolher uma mesa, volta pro Lobby
       navigate("/lobby");
       return;
     }
-
-    carregarSolicitacoes();
+    carregarMesa();
   }, [tenantId, navigate]);
 
-  const handleAvaliar = async (solicitacaoId, aprovar) => {
-    try {
-      await api.put(
-        `/mesas/avaliar-solicitacao/${solicitacaoId}?aprovar=${aprovar}`,
-      );
-
-      // Atualiza a tela removendo o jogador que acabou de ser avaliado
-      setSolicitacoes(solicitacoes.filter((s) => s.id !== solicitacaoId));
-    } catch (error) {
-      alert("Erro ao avaliar a solicitação do jogador.");
-    }
-  };
-
   const voltarParaLobby = () => {
-    localStorage.removeItem("tenantId"); // Limpa a mesa atual
+    localStorage.removeItem("tenantId");
     navigate("/lobby");
   };
 
+  if (!mesa)
+    return (
+      <div className="min-h-screen bg-zinc-950 text-white flex items-center justify-center">
+        Carregando pergaminhos...
+      </div>
+    );
+
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-100 flex flex-col">
-      {/* Header da Mesa */}
       <header className="bg-zinc-900 border-b border-zinc-800 p-4 shadow-md">
         <div className="max-w-7xl mx-auto flex justify-between items-center">
           <div className="flex items-center space-x-4">
@@ -61,77 +64,100 @@ export function Campanha() {
               ← Voltar ao Lobby
             </button>
             <h1 className="text-2xl font-bold text-red-600 uppercase tracking-wider border-l border-zinc-700 pl-4">
-              Mesa Ativa
+              {mesa.nome}
             </h1>
           </div>
           <div className="text-sm text-zinc-500 font-mono">
-            Tenant ID: {tenantId}
+            Código: {mesa.codigoConvite}
           </div>
         </div>
       </header>
 
-      {/* Grid Principal da Campanha */}
-      <main className="flex-1 max-w-7xl w-full mx-auto p-6 grid grid-cols-1 lg:grid-cols-4 gap-8">
-        {/* Coluna Central (Onde ficarão as fichas no futuro) */}
-        <div className="lg:col-span-3">
-          <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-8 min-h-[400px] flex flex-col items-center justify-center border-dashed">
-            <h2 className="text-xl font-bold text-zinc-400 mb-2">
-              Fichas de Personagem
-            </h2>
-            <p className="text-zinc-600 text-center max-w-md">
-              O backend já está preparado para o Multi-Tenant. Em breve, as
-              fichas da classe Character serão renderizadas aqui, completamente
-              isoladas de outras mesas.
-            </p>
-          </div>
-        </div>
-
-        {/* Coluna Lateral (Painel do Mestre) */}
-        <div className="lg:col-span-1 space-y-6">
-          <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-6 shadow-lg">
-            <h3 className="text-lg font-bold text-zinc-100 mb-4 flex items-center justify-between">
-              Solicitações
-              {solicitacoes.length > 0 && (
-                <span className="bg-red-600 text-white text-xs px-2 py-1 rounded-full">
-                  {solicitacoes.length}
-                </span>
-              )}
-            </h3>
-
-            {solicitacoes.length === 0 ? (
-              <p className="text-sm text-zinc-500 italic">
-                Nenhum aventureiro na fila.
+      <main className="flex-1 max-w-7xl w-full mx-auto p-6">
+        {/* ========================================== */}
+        {/* VISÃO DO MESTRE                            */}
+        {/* ========================================== */}
+        {mesa.isMestre ? (
+          <div className="space-y-8">
+            <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-8 text-center shadow-lg">
+              <h2 className="text-3xl font-bold text-zinc-100 mb-2">
+                Painel do Mestre
+              </h2>
+              <p className="text-zinc-400 mb-8">
+                Controle o destino dos seus aventureiros e prepare o mundo.
               </p>
-            ) : (
-              <ul className="space-y-4">
-                {solicitacoes.map((s) => (
-                  <li
-                    key={s.id}
-                    className="bg-zinc-950 p-3 rounded border border-zinc-800"
-                  >
-                    <p className="text-sm font-semibold text-zinc-200 mb-2">
-                      {s.nomeJogador}
-                    </p>
-                    <div className="flex space-x-2">
-                      <button
-                        onClick={() => handleAvaliar(s.id, true)}
-                        className="flex-1 bg-green-700/20 text-green-500 hover:bg-green-700 hover:text-white border border-green-900/50 py-1 rounded text-xs font-bold transition-colors"
-                      >
-                        Aprovar
-                      </button>
-                      <button
-                        onClick={() => handleAvaliar(s.id, false)}
-                        className="flex-1 bg-red-700/20 text-red-500 hover:bg-red-700 hover:text-white border border-red-900/50 py-1 rounded text-xs font-bold transition-colors"
-                      >
-                        Recusar
-                      </button>
-                    </div>
-                  </li>
-                ))}
-              </ul>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <button
+                  onClick={() =>
+                    alert("Em breve: Criador de NPC/Monstro/Personagem")
+                  }
+                  className="bg-zinc-800 hover:bg-zinc-700 text-zinc-200 py-4 px-6 rounded-lg font-bold border border-zinc-700 transition-all shadow-md"
+                >
+                  🧙‍♂️ Criar Personagem/NPC
+                </button>
+                <button
+                  onClick={() => alert("Em breve: Atribuição de Fichas")}
+                  className="bg-zinc-800 hover:bg-zinc-700 text-zinc-200 py-4 px-6 rounded-lg font-bold border border-zinc-700 transition-all shadow-md"
+                >
+                  🔗 Gerenciar Controle
+                </button>
+                <button
+                  onClick={() => navigate("/sessao-ativa")}
+                  className="bg-red-700 hover:bg-red-600 text-white py-4 px-6 rounded-lg font-bold transition-all shadow-lg shadow-red-900/20"
+                >
+                  ⚔️ Iniciar / Continuar Campanha
+                </button>
+              </div>
+            </div>
+
+            {/* Fila de aprovação de jogadores */}
+            {solicitacoes.length > 0 && (
+              <div className="bg-red-900/20 border border-red-900/50 rounded-xl p-6">
+                <h3 className="text-lg font-bold text-red-500 mb-4">
+                  Aventureiros na Taverna ({solicitacoes.length})
+                </h3>
+                <p className="text-sm text-zinc-400">
+                  Você tem solicitações pendentes. Libere a entrada deles para
+                  começarem a enviar fichas.
+                </p>
+              </div>
             )}
           </div>
-        </div>
+        ) : (
+          /* ========================================== */
+          /* VISÃO DO JOGADOR                           */
+          /* ========================================== */
+          <div className="space-y-8">
+            <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-8 shadow-lg">
+              <h2 className="text-2xl font-bold text-emerald-500 mb-2">
+                Seus Personagens
+              </h2>
+              <p className="text-zinc-400 mb-6">
+                Escolha um herói para esta jornada ou envie uma nova ficha para
+                o Mestre aprovar.
+              </p>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                <div className="border-2 border-dashed border-zinc-700 rounded-lg p-6 flex flex-col items-center justify-center text-zinc-500 hover:text-emerald-500 hover:border-emerald-500 transition-colors cursor-pointer">
+                  <span className="text-3xl mb-2">+</span>
+                  <span className="font-bold">Submeter Nova Ficha</span>
+                </div>
+                {/* Aqui faremos o .map() das fichas do jogador futuramente */}
+              </div>
+            </div>
+
+            <div className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-8 text-center">
+              <h3 className="text-xl font-bold text-zinc-300 mb-2">
+                Aguardando Início da Sessão...
+              </h3>
+              <p className="text-zinc-500">
+                Quando o mestre iniciar o encontro, você será convocado
+                automaticamente para o grid.
+              </p>
+            </div>
+          </div>
+        )}
       </main>
     </div>
   );
