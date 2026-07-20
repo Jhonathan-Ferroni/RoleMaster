@@ -89,18 +89,16 @@ export function Campanha() {
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 <button
-                  onClick={() =>
-                    alert("Em breve: Criador de NPC/Monstro/Personagem")
-                  }
+                  onClick={() => navigate("/criar-ficha")}
                   className="bg-zinc-800 hover:bg-zinc-700 text-zinc-200 py-4 px-6 rounded-lg font-bold border border-zinc-700 transition-all shadow-md"
                 >
                   🧙‍♂️ Criar Personagem/NPC
                 </button>
                 <button
-                  onClick={() => alert("Em breve: Atribuição de Fichas")}
+                  onClick={() => navigate("/aprovacao-fichas")} // Rota corrigida
                   className="bg-zinc-800 hover:bg-zinc-700 text-zinc-200 py-4 px-6 rounded-lg font-bold border border-zinc-700 transition-all shadow-md"
                 >
-                  🔗 Gerenciar Controle
+                  🔗 Aprovar Fichas
                 </button>
                 <button
                   onClick={() => navigate("/sessao-ativa")}
@@ -139,7 +137,11 @@ export function Campanha() {
               </p>
 
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                <div className="border-2 border-dashed border-zinc-700 rounded-lg p-6 flex flex-col items-center justify-center text-zinc-500 hover:text-emerald-500 hover:border-emerald-500 transition-colors cursor-pointer">
+                {/* Evento onClick adicionado aqui */}
+                <div
+                  onClick={() => navigate("/criar-ficha")}
+                  className="border-2 border-dashed border-zinc-700 rounded-lg p-6 flex flex-col items-center justify-center text-zinc-500 hover:text-emerald-500 hover:border-emerald-500 transition-colors cursor-pointer"
+                >
                   <span className="text-3xl mb-2">+</span>
                   <span className="font-bold">Submeter Nova Ficha</span>
                 </div>

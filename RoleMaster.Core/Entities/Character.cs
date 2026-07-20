@@ -1,8 +1,21 @@
 ﻿
 namespace RoleMaster.Core.Entities;
 
+public enum StatusPersonagem
+{
+    Pendente,
+    Aprovado,
+    Rejeitado
+}
+
 public class Character : BaseEntity
 {
+    public StatusPersonagem Status { get; set; } = StatusPersonagem.Pendente;
+    public string MesaId { get; set; } = string.Empty;
+    public Mesa? Mesa { get; set; }
+
+    public int ?UsuarioId { get; set; }
+    public Usuario? Usuario { get; set; }
     // --- Dados Principais ---
     public string Nome { get; set; } = string.Empty; // [cite: 3]
     public string Classe { get; set; } = string.Empty; // [cite: 4]

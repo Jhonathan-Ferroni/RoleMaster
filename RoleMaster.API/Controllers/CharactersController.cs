@@ -18,13 +18,76 @@ public class CharactersController : ControllerBase
         _context = context;
     }
 
-    [HttpGet]
-    public async Task<IActionResult> Listar()
+    // --- ROTAS DE LISTAGEM --- //
+
+    [HttpGet("mesa/{mesaId}")]
+    public async Task<IActionResult> ListarFichasDaMesa(string mesaId)
     {
-        // Retorna a lista de forma mais leve, ideal para a tela de seleção de personagens do jogador
-        var characters = await _context.Characters.ToListAsync();
-        return Ok(characters);
+        // Retorna TODAS as fichas da mesa (usado pelo Mestre na tela de Gestão)
+        var fichas = await _context.Characters
+            .Where(c => c.MesaId == mesaId)
+            .ToListAsync();
+
+        return Ok(fichas);
     }
+
+    [HttpGet("mesa/{mesaId}/minhas")]
+    public async Task<IActionResult> ListarMinhasFichas(string mesaId)
+    {
+        // Retorna APENAS as fichas do jogador logado (usado pelo Jogador no Lobby da Campanha)
+        var userIdString = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+        if (string.IsNullOrEmpty(userIdString) || !int.TryParse(userIdString, out int usuarioId))
+        {
+            return Unauthorized("Usuário não identificado.");
+        }
+
+        var fichas = await _context.Characters
+            .Where(c => c.MesaId == mesaId && c.UsuarioId == usuarioId)
+            .ToListAsync();
+
+        return Ok(fichas);
+    }
+
+    [HttpGet("mesa/{mesaId}/pendentes")]
+    public async Task<IActionResult> ListarFichasPendentes(string mesaId)
+    {
+        // Retorna apenas as pendentes (útil para notificações)
+        var fichas = await _context.Characters
+            .Where(c => c.MesaId == mesaId && c.Status == StatusPersonagem.Pendente)
+            .ToListAsync();
+
+        return Ok(fichas);
+    }
+
+    // --- ROTAS DE GERENCIAMENTO (MESTRE) --- //
+
+    [HttpPatch("{id}/status")]
+    public async Task<IActionResult> MudarStatus(int id, [FromBody] StatusPersonagem novoStatus)
+    {
+        var character = await _context.Characters.FindAsync(id);
+
+        if (character == null)
+            return NotFound("Personagem não encontrado.");
+
+        character.Status = novoStatus;
+        await _context.SaveChangesAsync();
+
+        return Ok(new { message = $"Status atualizado para {novoStatus}" });
+    }
+
+    [HttpPatch("{id}/atribuir")]
+    public async Task<IActionResult> AtribuirJogador(int id, [FromBody] int? novoUsuarioId)
+    {
+        var character = await _context.Characters.FindAsync(id);
+        if (character == null) return NotFound("Ficha não encontrada.");
+
+        character.UsuarioId = novoUsuarioId; // Pode ser o ID de um jogador ou null (sem dono)
+        await _context.SaveChangesAsync();
+
+        return Ok(new { message = "Posse da ficha atualizada com sucesso!" });
+    }
+
+    // --- ROTAS DE CRUD TRADICIONAL --- //
 
     [HttpGet("{id}")]
     public async Task<IActionResult> Obter(int id)
@@ -44,6 +107,22 @@ public class CharactersController : ControllerBase
     [HttpPost]
     public async Task<IActionResult> Criar([FromBody] Character novoCharacter)
     {
+        var userIdString = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+
+        if (string.IsNullOrEmpty(userIdString) || !int.TryParse(userIdString, out int usuarioId))
+        {
+            return Unauthorized("Apenas aventureiros logados podem forjar heróis.");
+        }
+
+        // TRAVA DE SEGURANÇA: Impede a criação de fichas fantasmas (sem mesa)
+        if (string.IsNullOrEmpty(novoCharacter.MesaId))
+        {
+            return BadRequest(new { message = "Um herói não pode nascer no vazio. É preciso estar em uma mesa para forjar a ficha." });
+        }
+
+        novoCharacter.UsuarioId = usuarioId;
+        novoCharacter.Status = StatusPersonagem.Pendente;
+
         _context.Characters.Add(novoCharacter);
         await _context.SaveChangesAsync();
 

@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using RoleMaster.Infrastructure.Data;
@@ -11,9 +12,11 @@ using RoleMaster.Infrastructure.Data;
 namespace RoleMaster.Infrastructure.Migrations
 {
     [DbContext(typeof(RoleMasterDbContext))]
-    partial class RoleMasterDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260720172727_UpdateCharacter")]
+    partial class UpdateCharacter
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -257,7 +260,7 @@ namespace RoleMaster.Infrastructure.Migrations
                     b.Property<string>("TracosDePersonalidade")
                         .HasColumnType("text");
 
-                    b.Property<int?>("UsuarioId")
+                    b.Property<int>("UsuarioId")
                         .HasColumnType("integer");
 
                     b.Property<string>("Vinculos")
@@ -469,7 +472,9 @@ namespace RoleMaster.Infrastructure.Migrations
 
                     b.HasOne("RoleMaster.Core.Entities.Usuario", "Usuario")
                         .WithMany()
-                        .HasForeignKey("UsuarioId");
+                        .HasForeignKey("UsuarioId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
 
                     b.Navigation("Mesa");
 

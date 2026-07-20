@@ -117,12 +117,6 @@ export function Lobby() {
           {/* Grupo de Botões Atualizado */}
           <div className="flex flex-wrap gap-3">
             <button
-              onClick={() => navigate("/criar-ficha")}
-              className="px-4 py-2 bg-emerald-700 hover:bg-emerald-600 text-white font-bold rounded-lg transition-colors shadow-lg border border-emerald-800"
-            >
-              🗡️ Criar Ficha
-            </button>
-            <button
               onClick={handleSolicitarEntrada}
               className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-100 font-bold rounded-lg transition-colors shadow-lg border border-zinc-700"
             >

@@ -4,6 +4,8 @@ import { Registro } from "./pages/Registro";
 import { Lobby } from "./pages/Lobby";
 import { Campanha } from "./pages/Campanha";
 import { SessaoAtiva } from "./pages/SessaoAtiva";
+import { CriarFicha } from "./pages/CriarFicha";
+import { AprovacaoFichas } from "./pages/AprovacaoFichas";
 
 function App() {
   return (
@@ -15,6 +17,10 @@ function App() {
         <Route path="/lobby" element={<Lobby />} />
         <Route path="/campanha" element={<Campanha />} />
         <Route path="/sessao-ativa" element={<SessaoAtiva />} />
+        <Route path="/criar-ficha" element={<CriarFicha />} />
+        <Route path="/ficha/:id" element={<CriarFicha />} />
+        <Route path="/ficha/:id/editar" element={<CriarFicha />} />
+        <Route path="/aprovacao-fichas" element={<AprovacaoFichas />} />
       </Routes>
     </BrowserRouter>
   );
