@@ -4,9 +4,12 @@ WORKDIR /App
 
 # Copia tudo para dentro do container
 COPY . ./
-# Restaura as dependências e compila
-RUN dotnet restore
-RUN dotnet publish -c Release -o out
+
+# 1. Dizemos ao Docker EXATAMENTE qual projeto ele deve restaurar
+RUN dotnet restore RoleMaster.API/RoleMaster.API.csproj
+
+# 2. Compila e publica apenas a API (o .NET é inteligente e compila o Core e a Infrastructure junto automaticamente)
+RUN dotnet publish RoleMaster.API/RoleMaster.API.csproj -c Release -o out
 
 # Estágio de Produção (Imagem mais leve apenas para rodar)
 FROM mcr.microsoft.com/dotnet/aspnet:8.0
@@ -17,5 +20,5 @@ COPY --from=build-env /App/out .
 EXPOSE 8080
 ENV ASPNETCORE_URLS=http://+:8080
 
-# ===> MUDE O NOME AQUI SE NECESSÁRIO <===
+# Ponto de entrada do sistema
 ENTRYPOINT ["dotnet", "RoleMaster.API.dll"]
