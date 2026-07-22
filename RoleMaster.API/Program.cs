@@ -17,15 +17,17 @@ builder.Services.AddDbContext<RoleMasterDbContext>(options =>
 builder.Services.AddControllers();
 
 // === INÍCIO DA CONFIGURAÇÃO SEGURA DE CORS ===
+var allowedOrigins = builder.Configuration.GetSection("AllowedOrigins").Get<string[]>()
+                     ?? new[] { "http://localhost:5173" };
+
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("PermitirReact", policy =>
     {
-        // Trava o acesso exclusivamente para o seu frontend Vite. 
-        // Hackers hospedando clones da sua interface em outros domínios serão bloqueados pelo navegador.
-        policy.WithOrigins("http://localhost:5173")
-              .AllowAnyHeader()  // Permite enviarmos o cabeçalho Authorization (JWT) e o X-Tenant-ID
-              .AllowAnyMethod(); // Permite GET, POST, PUT, DELETE
+        policy.WithOrigins(allowedOrigins)
+              .AllowAnyHeader()
+              .AllowAnyMethod()
+              .AllowCredentials();
     });
 });
 // === FIM DA CONFIGURAÇÃO DE CORS ===
