@@ -18,7 +18,8 @@ builder.Services.AddControllers();
 
 // === INÍCIO DA CONFIGURAÇÃO SEGURA DE CORS ===
 var allowedOrigins = builder.Configuration.GetSection("AllowedOrigins").Get<string[]>()
-                     ?? new[] { "http://localhost:5173" };
+                     ?? new[] { "http://localhost:5173",
+                     "https://role-master-olive.vercel.app"};
 
 builder.Services.AddCors(options =>
 {
