@@ -171,6 +171,35 @@ public class MesasController : ControllerBase
 
         return Ok(mesa);
     }
+    // 6. LISTAR JOGADORES APROVADOS NA MESA (Para delegar fichas)
+    [HttpGet("{mesaId}/jogadores")]
+    public async Task<IActionResult> ListarJogadoresDaMesa(string mesaId)
+    {
+        // Faz um join com a tabela de Usuários para pegar os nomes de quem foi Aprovado
+        var jogadores = await _context.SolicitacoesMesa
+            .Include(s => s.Usuario)
+            .Where(s => s.MesaId == mesaId && s.Status == StatusSolicitacao.Aprovada)
+            .Select(s => new
+            {
+                Id = s.UsuarioId, // ID que o frontend vai usar para vincular o boneco
+                Nome = s.Usuario!.Nome
+            })
+            .ToListAsync();
+
+        // (Opcional, mas recomendado): Adicionar o Mestre na lista
+        // para que você possa atribuir NPCs a si mesmo.
+        var mesa = await _context.Mesas.FirstOrDefaultAsync(m => m.CodigoConvite == mesaId);
+        if (mesa != null)
+        {
+            var mestre = await _context.Usuarios.FindAsync(mesa.MestreId);
+            if (mestre != null)
+            {
+                jogadores.Insert(0, new { Id = mestre.Id, Nome = mestre.Nome + " (Mestre)" });
+            }
+        }
+
+        return Ok(jogadores);
+    }
 }
 
 public class CriarMesaDto
