@@ -40,6 +40,27 @@ export function Campanha() {
     carregarMesa();
   }, [tenantId, navigate]);
 
+  // ==========================================
+  // FUNÇÃO NOVA: AVALIAR O JOGADOR
+  // ==========================================
+  const avaliarJogador = async (solicitacaoId, aprovar) => {
+    try {
+      await api.put(
+        `/mesas/avaliar-solicitacao/${solicitacaoId}?aprovar=${aprovar}`,
+      );
+
+      // Remove o jogador da lista na tela instantaneamente
+      setSolicitacoes(solicitacoes.filter((s) => s.id !== solicitacaoId));
+
+      alert(
+        aprovar ? "Jogador aceito na guilda!" : "Jogador expulso da taverna.",
+      );
+    } catch (error) {
+      console.error("Erro ao avaliar jogador:", error);
+      alert("Erro ao avaliar o jogador.");
+    }
+  };
+
   const voltarParaLobby = () => {
     localStorage.removeItem("tenantId");
     navigate("/lobby");
@@ -95,7 +116,7 @@ export function Campanha() {
                   🧙‍♂️ Criar Personagem/NPC
                 </button>
                 <button
-                  onClick={() => navigate("/aprovacao-fichas")} // Rota corrigida
+                  onClick={() => navigate("/aprovacao-fichas")}
                   className="bg-zinc-800 hover:bg-zinc-700 text-zinc-200 py-4 px-6 rounded-lg font-bold border border-zinc-700 transition-all shadow-md"
                 >
                   🔗 Aprovar Fichas
@@ -109,16 +130,51 @@ export function Campanha() {
               </div>
             </div>
 
-            {/* Fila de aprovação de jogadores */}
+            {/* ========================================== */}
+            {/* FILA DE APROVAÇÃO DE JOGADORES (ATUALIZADA) */}
+            {/* ========================================== */}
             {solicitacoes.length > 0 && (
-              <div className="bg-red-900/20 border border-red-900/50 rounded-xl p-6">
-                <h3 className="text-lg font-bold text-red-500 mb-4">
+              <div className="bg-red-900/10 border border-red-900/40 rounded-xl p-6">
+                <h3 className="text-xl font-bold text-red-500 mb-2">
                   Aventureiros na Taverna ({solicitacoes.length})
                 </h3>
-                <p className="text-sm text-zinc-400">
+                <p className="text-sm text-zinc-400 mb-6">
                   Você tem solicitações pendentes. Libere a entrada deles para
                   começarem a enviar fichas.
                 </p>
+
+                {/* Lista de jogadores com botões estilizados no Tailwind */}
+                <div className="space-y-3">
+                  {solicitacoes.map((solic) => (
+                    <div
+                      key={solic.id}
+                      className="flex items-center justify-between bg-zinc-900/80 border border-zinc-800 p-4 rounded-lg shadow-sm"
+                    >
+                      <span className="text-zinc-300">
+                        🧙‍♂️ O jogador{" "}
+                        <strong className="text-white text-lg ml-1 mr-1">
+                          {solic.nomeJogador}
+                        </strong>{" "}
+                        quer entrar na guilda!
+                      </span>
+
+                      <div className="flex space-x-3">
+                        <button
+                          onClick={() => avaliarJogador(solic.id, true)}
+                          className="bg-emerald-600 hover:bg-emerald-500 text-white px-5 py-2 rounded-md font-semibold transition-colors"
+                        >
+                          Permitir
+                        </button>
+                        <button
+                          onClick={() => avaliarJogador(solic.id, false)}
+                          className="bg-zinc-800 hover:bg-red-600 text-zinc-300 hover:text-white px-5 py-2 rounded-md font-semibold transition-colors border border-zinc-700 hover:border-red-500"
+                        >
+                          Expulsar
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
           </div>
@@ -137,7 +193,6 @@ export function Campanha() {
               </p>
 
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {/* Evento onClick adicionado aqui */}
                 <div
                   onClick={() => navigate("/criar-ficha")}
                   className="border-2 border-dashed border-zinc-700 rounded-lg p-6 flex flex-col items-center justify-center text-zinc-500 hover:text-emerald-500 hover:border-emerald-500 transition-colors cursor-pointer"
@@ -145,7 +200,6 @@ export function Campanha() {
                   <span className="text-3xl mb-2">+</span>
                   <span className="font-bold">Submeter Nova Ficha</span>
                 </div>
-                {/* Aqui faremos o .map() das fichas do jogador futuramente */}
               </div>
             </div>
 
