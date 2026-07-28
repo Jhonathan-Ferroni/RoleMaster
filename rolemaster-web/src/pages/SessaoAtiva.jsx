@@ -3,8 +3,8 @@ import { useNavigate } from "react-router-dom";
 import { HubConnectionBuilder } from "@microsoft/signalr";
 import { api } from "../services/api";
 
-// URL base do seu servidor C# (ajuste a porta se necessário)
-const BACKEND_URL = "https://localhost:7150";
+// URL base do seu servidor C# corrigida (Render)
+const BACKEND_URL = "https://rolemaster-ioyd.onrender.com";
 
 export function SessaoAtiva() {
   const navigate = useNavigate();
@@ -45,6 +45,7 @@ export function SessaoAtiva() {
 
   const iniciarSignalR = () => {
     const novaConexao = new HubConnectionBuilder()
+      // Caminho do Hub corrigido para bater com o C#
       .withUrl(`${BACKEND_URL}/campanhaHub`)
       .withAutomaticReconnect()
       .build();
