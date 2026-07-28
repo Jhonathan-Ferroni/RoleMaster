@@ -1,10 +1,14 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { HubConnectionBuilder } from "@microsoft/signalr";
 import { api } from "../services/api";
+
+const BACKEND_URL = "https://rolemaster-ioyd.onrender.com";
 
 export function Campanha() {
   const [mesa, setMesa] = useState(null);
   const [solicitacoes, setSolicitacoes] = useState([]);
+  const [conviteAberto, setConviteAberto] = useState(false); // NOVO: Controla se o convite apareceu
   const navigate = useNavigate();
   const tenantId = localStorage.getItem("tenantId");
 
@@ -22,7 +26,6 @@ export function Campanha() {
       const responseMesa = await api.get(`/mesas/${tenantId}`);
       setMesa(responseMesa.data);
 
-      // Se for o mestre, já aproveitamos e carregamos as solicitações pendentes
       if (responseMesa.data.isMestre) {
         carregarSolicitacoes();
       }
@@ -41,17 +44,41 @@ export function Campanha() {
   }, [tenantId, navigate]);
 
   // ==========================================
-  // FUNÇÃO NOVA: AVALIAR O JOGADOR
+  // NOVO: RADAR DO JOGADOR (SIGNALR NO LOBBY)
   // ==========================================
+  useEffect(() => {
+    // Se a mesa ainda não carregou ou se for o Mestre, não precisa ligar o radar aqui
+    if (!mesa || mesa.isMestre) return;
+
+    const conexao = new HubConnectionBuilder()
+      .withUrl(`${BACKEND_URL}/campanhaHub`)
+      .withAutomaticReconnect()
+      .build();
+
+    conexao
+      .start()
+      .then(() => {
+        // Jogador entra no grupo da mesa para ouvir
+        conexao.invoke("EntrarNaMesa", tenantId);
+
+        // Fica escutando a trombeta do Mestre
+        conexao.on("ReceberConvocacao", () => {
+          setConviteAberto(true); // Abre o Modal na cara do jogador!
+        });
+      })
+      .catch((err) => console.error("Erro no radar da Taverna:", err));
+
+    return () => {
+      conexao.stop();
+    };
+  }, [mesa, tenantId]);
+
   const avaliarJogador = async (solicitacaoId, aprovar) => {
     try {
       await api.put(
         `/mesas/avaliar-solicitacao/${solicitacaoId}?aprovar=${aprovar}`,
       );
-
-      // Remove o jogador da lista na tela instantaneamente
       setSolicitacoes(solicitacoes.filter((s) => s.id !== solicitacaoId));
-
       alert(
         aprovar ? "Jogador aceito na guilda!" : "Jogador expulso da taverna.",
       );
@@ -74,7 +101,39 @@ export function Campanha() {
     );
 
   return (
-    <div className="min-h-screen bg-zinc-950 text-zinc-100 flex flex-col">
+    <div className="min-h-screen bg-zinc-950 text-zinc-100 flex flex-col relative">
+      {/* ========================================== */}
+      {/* NOVO: MODAL DE CONVITE PARA O GRID          */}
+      {/* ========================================== */}
+      {conviteAberto && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm">
+          <div className="bg-zinc-900 border border-red-900 rounded-xl p-8 max-w-md text-center shadow-[0_0_50px_rgba(185,28,28,0.3)] animate-pulse">
+            <h2 className="text-3xl font-bold text-red-500 mb-4">
+              ⚔️ A Batalha Vai Começar!
+            </h2>
+            <p className="text-zinc-300 mb-8 font-medium text-lg">
+              O Mestre tocou a trombeta e está te convocando para o grid. Deseja
+              ingressar na sessão agora?
+            </p>
+            <div className="flex flex-col gap-3">
+              <button
+                onClick={() => navigate("/sessao-ativa")}
+                className="bg-red-700 hover:bg-red-600 text-white font-bold py-3 px-6 rounded-lg transition-colors text-lg"
+              >
+                Atender ao Chamado
+              </button>
+              <button
+                onClick={() => setConviteAberto(false)}
+                className="bg-zinc-800 hover:bg-zinc-700 text-zinc-400 py-2 px-6 rounded-lg transition-colors border border-zinc-700"
+              >
+                Aguardar na Taverna
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* O resto do seu visual padrão do Cabeçalho e Main... */}
       <header className="bg-zinc-900 border-b border-zinc-800 p-4 shadow-md">
         <div className="max-w-7xl mx-auto flex justify-between items-center">
           <div className="flex items-center space-x-4">
@@ -95,9 +154,6 @@ export function Campanha() {
       </header>
 
       <main className="flex-1 max-w-7xl w-full mx-auto p-6">
-        {/* ========================================== */}
-        {/* VISÃO DO MESTRE                            */}
-        {/* ========================================== */}
         {mesa.isMestre ? (
           <div className="space-y-8">
             <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-8 text-center shadow-lg">
@@ -130,9 +186,6 @@ export function Campanha() {
               </div>
             </div>
 
-            {/* ========================================== */}
-            {/* FILA DE APROVAÇÃO DE JOGADORES (ATUALIZADA) */}
-            {/* ========================================== */}
             {solicitacoes.length > 0 && (
               <div className="bg-red-900/10 border border-red-900/40 rounded-xl p-6">
                 <h3 className="text-xl font-bold text-red-500 mb-2">
@@ -142,8 +195,6 @@ export function Campanha() {
                   Você tem solicitações pendentes. Libere a entrada deles para
                   começarem a enviar fichas.
                 </p>
-
-                {/* Lista de jogadores com botões estilizados no Tailwind */}
                 <div className="space-y-3">
                   {solicitacoes.map((solic) => (
                     <div
@@ -157,7 +208,6 @@ export function Campanha() {
                         </strong>{" "}
                         quer entrar na guilda!
                       </span>
-
                       <div className="flex space-x-3">
                         <button
                           onClick={() => avaliarJogador(solic.id, true)}
@@ -179,9 +229,6 @@ export function Campanha() {
             )}
           </div>
         ) : (
-          /* ========================================== */
-          /* VISÃO DO JOGADOR                           */
-          /* ========================================== */
           <div className="space-y-8">
             <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-8 shadow-lg">
               <h2 className="text-2xl font-bold text-emerald-500 mb-2">
@@ -208,8 +255,8 @@ export function Campanha() {
                 Aguardando Início da Sessão...
               </h3>
               <p className="text-zinc-500">
-                Quando o mestre iniciar o encontro, você será convocado
-                automaticamente para o grid.
+                Mantenha seus machados afiados. Quando o mestre iniciar o
+                encontro, o chamado surgirá nesta tela.
               </p>
             </div>
           </div>

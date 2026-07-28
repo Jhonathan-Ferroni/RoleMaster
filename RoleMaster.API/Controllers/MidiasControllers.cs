@@ -4,6 +4,8 @@ using RoleMaster.Core.Entities;
 using RoleMaster.Infrastructure.Data;
 using CloudinaryDotNet;
 using CloudinaryDotNet.Actions;
+using System;
+using System.Threading.Tasks;
 
 namespace RoleMaster.API.Controllers;
 
@@ -23,50 +25,70 @@ public class MidiasController : ControllerBase
     [HttpPost("upload")]
     public async Task<IActionResult> UploadMidia([FromForm] IFormFile arquivo, [FromForm] string mesaId, [FromForm] TipoMidia tipo)
     {
-        if (arquivo == null || arquivo.Length == 0) return BadRequest("Nenhum feitiço detectado.");
-
-        using var stream = arquivo.OpenReadStream();
-        string urlCompleta = "";
-        string publicId = "";
-
-        // O Cloudinary classifica Áudio como "Video" internamente
-        if (tipo == TipoMidia.ImagemCena)
+        try
         {
-            var uploadParams = new ImageUploadParams
+            if (arquivo == null || arquivo.Length == 0)
+                return BadRequest("Nenhum feitiço detectado.");
+
+            using var stream = arquivo.OpenReadStream();
+            string urlCompleta = "";
+            string publicId = "";
+
+            // O Cloudinary classifica Áudio como "Video" internamente
+            if (tipo == TipoMidia.ImagemCena)
             {
-                File = new FileDescription(arquivo.FileName, stream),
-                Folder = $"rolemaster/{mesaId}" // Organiza em pastas no Cloudinary
-            };
-            var resultado = await _cloudinary.UploadAsync(uploadParams);
-            urlCompleta = resultado.SecureUrl.ToString();
-            publicId = resultado.PublicId;
-        }
-        else
-        {
-            var uploadParams = new VideoUploadParams
+                var uploadParams = new ImageUploadParams
+                {
+                    File = new FileDescription(arquivo.FileName, stream),
+                    Folder = $"rolemaster/{mesaId}" // Organiza em pastas no Cloudinary
+                };
+
+                var resultado = await _cloudinary.UploadAsync(uploadParams);
+
+                // VERIFICAÇÃO CRÍTICA: Avalia se o Cloudinary recusou o arquivo
+                if (resultado.Error != null)
+                    return StatusCode(500, $"Erro no Cloudinary: {resultado.Error.Message}");
+
+                urlCompleta = resultado.SecureUrl.ToString();
+                publicId = resultado.PublicId;
+            }
+            else
             {
-                File = new FileDescription(arquivo.FileName, stream),
-                Folder = $"rolemaster/{mesaId}"
+                var uploadParams = new VideoUploadParams
+                {
+                    File = new FileDescription(arquivo.FileName, stream),
+                    Folder = $"rolemaster/{mesaId}"
+                };
+
+                var resultado = await _cloudinary.UploadAsync(uploadParams);
+
+                // VERIFICAÇÃO CRÍTICA: Avalia se o Cloudinary recusou o arquivo
+                if (resultado.Error != null)
+                    return StatusCode(500, $"Erro no Cloudinary: {resultado.Error.Message}");
+
+                urlCompleta = resultado.SecureUrl.ToString();
+                publicId = resultado.PublicId;
+            }
+
+            var novaMidia = new MidiaCampanha
+            {
+                MesaId = mesaId,
+                Tipo = tipo,
+                NomeArquivo = arquivo.FileName,
+                CaminhoServidor = urlCompleta,
+                PublicId = publicId,
+                DataExpiracao = DateTime.UtcNow.AddDays(10)
             };
-            var resultado = await _cloudinary.UploadAsync(uploadParams);
-            urlCompleta = resultado.SecureUrl.ToString();
-            publicId = resultado.PublicId;
+
+            _context.MidiasCampanha.Add(novaMidia);
+            await _context.SaveChangesAsync();
+
+            return Ok(novaMidia);
         }
-
-        var novaMidia = new MidiaCampanha
+        catch (Exception ex)
         {
-            MesaId = mesaId,
-            Tipo = tipo,
-            NomeArquivo = arquivo.FileName,
-            CaminhoServidor = urlCompleta, // Agora salva o link limpo e direto da web!
-            PublicId = publicId,           // Salva o ID para apagar depois
-            DataExpiracao = DateTime.UtcNow.AddDays(10)
-        };
-
-        _context.MidiasCampanha.Add(novaMidia);
-        await _context.SaveChangesAsync();
-
-        return Ok(novaMidia);
+            return StatusCode(500, $"A conjuração falhou miseravelmente: {ex.Message}");
+        }
     }
 
     [HttpGet("{mesaId}")]
@@ -76,6 +98,7 @@ public class MidiasController : ControllerBase
             .Where(m => m.MesaId == mesaId && m.DataExpiracao > DateTime.UtcNow)
             .OrderByDescending(m => m.Id)
             .ToListAsync();
+
         return Ok(midias);
     }
 

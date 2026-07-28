@@ -177,6 +177,22 @@ export function SessaoAtiva() {
     }
   };
 
+  // === CONVOCAR JOGADORES ===
+  const tocarTrombeta = async () => {
+    if (conexao) {
+      try {
+        await conexao.invoke("ConvocarJogadores", tenantId);
+        alert(
+          "📯 Trombeta tocada! Convites enviados aos jogadores na Taverna.",
+        );
+      } catch (err) {
+        console.error("Erro ao chamar jogadores:", err);
+      }
+    } else {
+      alert("A conexão com o túnel ainda não está pronta.");
+    }
+  };
+
   return (
     <div className="w-screen h-screen bg-black overflow-hidden relative flex flex-col">
       {/* ATUALIZAÇÃO 2: bg-contain e bg-no-repeat para não cortar a arte */}
@@ -303,6 +319,13 @@ export function SessaoAtiva() {
           <div className="pt-4 border-t border-zinc-800 flex justify-end">
             <button className="bg-red-700 hover:bg-red-600 text-white font-bold py-2 px-8 rounded shadow-lg shadow-red-900/20">
               ⚔️ Iniciar Encontro (Em breve)
+            </button>
+
+            <button
+              onClick={tocarTrombeta}
+              className="bg-red-700 hover:bg-red-600 text-white font-bold py-2 px-8 rounded shadow-lg shadow-red-900/20 active:scale-95 transition-all"
+            >
+              ⚔️ Convocar Aventureiros para o Grid
             </button>
           </div>
         </div>

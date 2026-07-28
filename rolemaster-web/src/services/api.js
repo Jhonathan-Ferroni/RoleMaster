@@ -2,9 +2,7 @@ import axios from "axios";
 
 // Certifique-se de que a porta (7123) é a mesma que o seu backend .NET está rodando
 export const api = axios.create({
-  baseURL:
-    import.meta.env.VITE_API_URL ||
-    "https://role-master-olive.vercel.app/sessao-ativa",
+  baseURL: import.meta.env.VITE_API_URL || "http://localhost:7150/api",
 });
 
 // Interceptor: Antes de qualquer requisição sair do React, ele injeta os headers

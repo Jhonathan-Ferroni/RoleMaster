@@ -11,6 +11,13 @@ public class CampanhaHub : Hub
         await Groups.AddToGroupAsync(Context.ConnectionId, mesaId);
     }
 
+    // Mestre chama este método passando o ID da mesa
+    public async Task ConvocarJogadores(string mesaId)
+    {
+        // O SignalR grita a palavra "ReceberConvocacao" para todos os conectados no grupo da mesa
+        await Clients.Group(mesaId).SendAsync("ReceberConvocacao");
+    }
+
     // O Mestre clica na imagem da cena, e o servidor espalha para os jogadores daquela mesa
     public async Task TrocarCena(string mesaId, string urlMidia)
     {
