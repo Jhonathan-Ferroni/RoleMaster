@@ -55,21 +55,57 @@ export function Campanha() {
       .withAutomaticReconnect()
       .build();
 
-    conexao
-      .start()
-      .then(() => {
-        // Jogador entra no grupo da mesa para ouvir
-        conexao.invoke("EntrarNaMesa", tenantId);
+    const startConnection = async () => {
+      try {
+        await conexao.start();
+        console.log("🎯 Conectado ao CampanhaHub (jogador)");
+
+        if (!tenantId) {
+          console.warn("tenantId ausente ao tentar entrar no grupo da mesa");
+        } else {
+          try {
+            await conexao.invoke("EntrarNaMesa", tenantId);
+            console.log("Entrou no grupo da mesa:", tenantId);
+          } catch (err) {
+            console.error("Falha ao invocar EntrarNaMesa:", err);
+          }
+        }
 
         // Fica escutando a trombeta do Mestre
         conexao.on("ReceberConvocacao", () => {
           setConviteAberto(true); // Abre o Modal na cara do jogador!
         });
-      })
-      .catch((err) => console.error("Erro no radar da Taverna:", err));
+
+        // Ao reconectar, reentrar no grupo (importante para reconnect automático)
+        conexao.onreconnected(async () => {
+          console.log(
+            "SignalR reconectado. Tentando reentrar no grupo da mesa...",
+          );
+          if (tenantId) {
+            try {
+              await conexao.invoke("EntrarNaMesa", tenantId);
+              console.log(
+                "Reentrado no grupo da mesa após reconexão:",
+                tenantId,
+              );
+            } catch (err) {
+              console.error("Erro ao reentrar no grupo após reconexão:", err);
+            }
+          }
+        });
+
+        conexao.onclose((err) => {
+          console.warn("Conexão SignalR fechada:", err);
+        });
+      } catch (err) {
+        console.error("Erro no radar da Taverna:", err);
+      }
+    };
+
+    startConnection();
 
     return () => {
-      conexao.stop();
+      conexao.stop().catch(() => {});
     };
   }, [mesa, tenantId]);
 

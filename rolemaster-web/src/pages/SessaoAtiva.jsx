@@ -52,9 +52,14 @@ export function SessaoAtiva() {
 
     novaConexao
       .start()
-      .then(() => {
+      .then(async () => {
         console.log("🎲 Conectado ao Túnel de Transmissão!");
-        novaConexao.invoke("EntrarNaMesa", tenantId);
+        try {
+          await novaConexao.invoke("EntrarNaMesa", tenantId);
+          console.log("Mestre entrou no grupo da mesa:", tenantId);
+        } catch (err) {
+          console.error("Falha ao invocar EntrarNaMesa (mestre):", err);
+        }
 
         // === OUVIDOS DOS JOGADORES E DO MESTRE ===
 
@@ -71,10 +76,11 @@ export function SessaoAtiva() {
             audioRef.current.play();
           }
         });
+
+        // Marca a conexão apenas depois de iniciada com sucesso
+        setConexao(novaConexao);
       })
       .catch((err) => console.error("Falha ao conectar no Túnel: ", err));
-
-    setConexao(novaConexao);
   };
 
   useEffect(() => {
