@@ -1,5 +1,7 @@
 # 🎲 RoleMaster - Plataforma SaaS Corporativa para Gestão de RPG de Mesa
 
+![RoleMaster Banner](media/1.png)
+
 **RoleMaster** é uma solução SaaS corporativa focada em permitir que estúdios, comunidades e equipes de eventos gerenciem campanhas de RPG de mesa com segurança, isolamento de dados e governança.
 
 O sistema foi projetado para suportar múltiplos locatários (multi-tenant), separação de contexto por mesa/campanha e integração com APIs de frontend modernas. A implementação prioriza confiabilidade, auditabilidade e preparo para implantação em nuvem.
@@ -7,6 +9,8 @@ O sistema foi projetado para suportar múltiplos locatários (multi-tenant), sep
 ---
 
 ## 🚀 Visão Técnica e de Negócio
+
+![Dashboard e Visão Geral](media/2.png)
 
 - Produto orientado a SaaS: cada mesa ou campanha funciona como um locatário lógico isolado.
 - Arquitetura modular baseada em **Clean Architecture** para reduzir acoplamento e suportar evolução de produto.
@@ -16,6 +20,8 @@ O sistema foi projetado para suportar múltiplos locatários (multi-tenant), sep
 ---
 
 ## 🏗️ Arquitetura do Projeto
+
+![Estrutura da Arquitetura](media/3.png)
 
 O projeto está dividido em camadas consolidadas para escalabilidade e manutenção:
 
@@ -27,6 +33,8 @@ O projeto está dividido em camadas consolidadas para escalabilidade e manutenç
 ---
 
 ## 🔧 Tecnologias e Ferramentas
+
+![Stack Tecnológica](media/4.png)
 
 - **Plataforma:** .NET 8 (.NET SDK atual)
 - **Linguagem:** C# 13
@@ -42,6 +50,8 @@ O projeto está dividido em camadas consolidadas para escalabilidade e manutenç
 
 ## 🧩 Recursos Empresariais Principais
 
+![Gestão de Fichas e Mesa](media/5.png)
+
 - Isolamento multi-tenant por mesa/campanha para evitar vazamento de dados entre grupos.
 - Controle de acesso com permissões de Mestre e jogador.
 - Fluxo de entrada de jogadores: convite por código, solicitação de acesso e aprovação do Mestre.
@@ -51,6 +61,8 @@ O projeto está dividido em camadas consolidadas para escalabilidade e manutenç
 ---
 
 ## 💼 Benefícios de Valor para o Cliente
+
+![Visão do Jogador e Benefícios](media/6.png)
 
 - **Segurança de governança**: dados de cada campanha são tratados como unidades independentes.
 - **Escalabilidade**: arquitetura separada permite evolução do produto sem refatoração monolítica.
@@ -71,6 +83,8 @@ O projeto está dividido em camadas consolidadas para escalabilidade e manutenç
 ---
 
 ## ⚙️ Operacional e Deploy
+
+![Deploy e Interface](media/7.png)
 
 - A API está pronta para execução local com `dotnet run` em `RoleMaster.API`.
 - O banco de dados deve ser configurado via `appsettings.json` / `appsettings.Development.json`.
