@@ -6,6 +6,7 @@ import { api } from "../services/api";
 export function Lobby() {
   const [nomeUsuario, setNomeUsuario] = useState("");
   const [mesas, setMesas] = useState([]);
+  const [codigoCopiado, setCodigoCopiado] = useState("");
   const navigate = useNavigate();
 
   const fetchMesas = async () => {
@@ -90,6 +91,19 @@ export function Lobby() {
     }
   };
 
+  const copiarCodigo = async (codigo) => {
+    if (!codigo) return;
+
+    try {
+      await navigator.clipboard.writeText(codigo);
+      setCodigoCopiado(codigo);
+      setTimeout(() => setCodigoCopiado(""), 1800);
+    } catch (error) {
+      console.error("Erro ao copiar código:", error);
+      alert("Não foi possível copiar o código automaticamente.");
+    }
+  };
+
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-100 p-8">
       <header className="max-w-6xl mx-auto flex justify-between items-center border-b border-zinc-800 pb-6 mb-8">
@@ -165,14 +179,28 @@ export function Lobby() {
                   </div>
                 </div>
 
-                <button
-                  onClick={() =>
-                    acessarMesa(mesa.codigoConvite || mesa.CodigoConvite)
-                  }
-                  className="w-full mt-6 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 font-semibold py-2 px-4 rounded transition-colors border border-zinc-700"
-                >
-                  Entrar na Mesa
-                </button>
+                <div className="mt-6 flex gap-2">
+                  <button
+                    onClick={() =>
+                      copiarCodigo(mesa.codigoConvite || mesa.CodigoConvite)
+                    }
+                    className="flex-1 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 font-semibold py-2 px-4 rounded transition-colors border border-zinc-700"
+                  >
+                    {codigoCopiado ===
+                    (mesa.codigoConvite || mesa.CodigoConvite)
+                      ? "Código Copiado!"
+                      : "Copiar Código"}
+                  </button>
+
+                  <button
+                    onClick={() =>
+                      acessarMesa(mesa.codigoConvite || mesa.CodigoConvite)
+                    }
+                    className="flex-1 bg-red-700 hover:bg-red-600 text-white font-semibold py-2 px-4 rounded transition-colors"
+                  >
+                    Entrar na Mesa
+                  </button>
+                </div>
               </div>
             ))}
           </div>

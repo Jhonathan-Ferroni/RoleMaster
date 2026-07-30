@@ -10,14 +10,30 @@ export function SessaoAtiva() {
   const navigate = useNavigate();
   const tenantId = localStorage.getItem("tenantId");
 
-  const [conexao, setConexao] = useState(null);
   const [isMestre, setIsMestre] = useState(false);
   const [cenaAtual, setCenaAtual] = useState("");
   const [midias, setMidias] = useState([]);
   const [uploading, setUploading] = useState(false);
+  const [arquivoPreview, setArquivoPreview] = useState(null);
+  const [urlPreview, setUrlPreview] = useState("");
+  const [contagem, setContagem] = useState(null);
+  const [volume, setVolume] = useState(0.5);
+  const [audioAtivo, setAudioAtivo] = useState("");
 
   // Referência para o player de áudio invisível
   const audioRef = useRef(null);
+
+  // === FIX 1: ref para a conexão, para o cleanup do useEffect sempre
+  // enxergar a instância mais recente (evita stale closure) ===
+  const conexaoRef = useRef(null);
+
+  // === FIX 2: ref para o volume, para o listener "ReceberMusica"
+  // (registrado uma única vez) sempre usar o valor mais recente ===
+  const volumeRef = useRef(volume);
+
+  useEffect(() => {
+    volumeRef.current = volume;
+  }, [volume]);
 
   const verificarAcessoEConectar = async () => {
     try {
@@ -25,11 +41,12 @@ export function SessaoAtiva() {
       setIsMestre(response.data.isMestre);
 
       if (response.data.isMestre) {
-        carregarMidias();
+        await carregarMidias();
       }
 
       iniciarSignalR();
-    } catch (error) {
+    } catch (err) {
+      console.error("Erro ao verificar acesso à mesa:", err);
       navigate("/lobby");
     }
   };
@@ -45,7 +62,6 @@ export function SessaoAtiva() {
 
   const iniciarSignalR = () => {
     const novaConexao = new HubConnectionBuilder()
-      // Caminho do Hub corrigido para bater com o C#
       .withUrl(`${BACKEND_URL}/campanhaHub`)
       .withAutomaticReconnect()
       .build();
@@ -70,15 +86,17 @@ export function SessaoAtiva() {
 
         // 2. Ouvir a ordem de tocar música
         novaConexao.on("ReceberMusica", (urlMusica) => {
+          setAudioAtivo(urlMusica);
           if (audioRef.current) {
             audioRef.current.src = urlMusica;
-            audioRef.current.volume = 0.5; // Deixa num volume agradável
-            audioRef.current.play();
+            audioRef.current.volume = volumeRef.current;
+            audioRef.current
+              .play()
+              .catch((e) => console.error("Bloqueio de autoplay:", e));
           }
         });
 
-        // Marca a conexão apenas depois de iniciada com sucesso
-        setConexao(novaConexao);
+        conexaoRef.current = novaConexao;
       })
       .catch((err) => console.error("Falha ao conectar no Túnel: ", err));
   };
@@ -88,43 +106,76 @@ export function SessaoAtiva() {
       navigate("/lobby");
       return;
     }
-    verificarAcessoEConectar();
 
-    // Quando sair da tela, desconecta do SignalR para não gastar memória
-    return () => {
-      if (conexao) conexao.stop();
+    let ativo = true;
+
+    const carregarDados = async () => {
+      try {
+        await verificarAcessoEConectar();
+      } catch (err) {
+        if (ativo) {
+          console.error("Erro ao inicializar sessão:", err);
+        }
+      }
     };
-  }, [tenantId]);
+
+    void carregarDados();
+
+    return () => {
+      ativo = false;
+      if (conexaoRef.current) {
+        void conexaoRef.current.stop();
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tenantId, navigate]);
 
   // === CONTROLES DO MESTRE ===
 
-  const handleUpload = async (e) => {
+  const handleSelecionarArquivo = (e) => {
     const arquivo = e.target.files[0];
     if (!arquivo) return;
 
-    // Converte o tipo do arquivo para o número do Enum do C# (0 = Imagem, 2 = Musica)
-    const tipoMidia = arquivo.type.startsWith("image") ? 0 : 2;
+    if (urlPreview) {
+      URL.revokeObjectURL(urlPreview);
+    }
 
+    setArquivoPreview(arquivo);
+    setUrlPreview(URL.createObjectURL(arquivo));
+  };
+
+  const confirmarUpload = async () => {
+    if (!arquivoPreview) return;
+
+    const tipoMidia = arquivoPreview.type.startsWith("image") ? 0 : 2;
     const formData = new FormData();
-    formData.append("arquivo", arquivo);
+    formData.append("arquivo", arquivoPreview);
     formData.append("mesaId", tenantId);
     formData.append("tipo", tipoMidia);
 
     setUploading(true);
     try {
-      await api.post("/midias/upload", formData, {
-        headers: { "Content-Type": "multipart/form-data" },
-      });
-      carregarMidias(); // Recarrega a lista de arquivos
-    } catch (error) {
-      alert("Falha ao conjurar o arquivo.");
+      await api.post("/midias/upload", formData);
+      await carregarMidias();
+      cancelarPreview();
+    } catch (err) {
+      console.error("Falha ao conjurar o arquivo no servidor:", err);
+      alert("Falha ao conjurar o arquivo no servidor.");
     } finally {
       setUploading(false);
     }
   };
 
+  const cancelarPreview = () => {
+    if (urlPreview) {
+      URL.revokeObjectURL(urlPreview);
+    }
+    setArquivoPreview(null);
+    setUrlPreview("");
+  };
+
   const handleExcluirMidia = async (id, e) => {
-    e.stopPropagation(); // Impede que o clique "vaze" e acione a transmissão da cena
+    e.stopPropagation();
 
     if (
       !window.confirm("Deseja realmente dissipar esta magia e apagar a mídia?")
@@ -133,24 +184,23 @@ export function SessaoAtiva() {
 
     try {
       await api.delete(`/midias/${id}`);
-      // Remove a mídia apagada da tela instantaneamente sem precisar recarregar o banco
-      setMidias(midias.filter((m) => m.id !== id));
-    } catch (error) {
+      setMidias((midiasAtuais) => midiasAtuais.filter((m) => m.id !== id));
+    } catch (err) {
+      console.error("Falha ao excluir a mídia:", err);
       alert("Falha ao excluir a mídia.");
     }
   };
 
-  // === ATUALIZAÇÃO 1: Exibição visual instantânea ===
   const transmitirCena = async (caminhoServidor) => {
-    const urlCompleta = caminhoServidor;
+    setCenaAtual(caminhoServidor);
 
-    // Atualiza IMEDIATAMENTE a tela do mestre
-    setCenaAtual(urlCompleta);
-
-    // Dispara a ordem pelo túnel SignalR logo em seguida
-    if (conexao) {
+    if (conexaoRef.current) {
       try {
-        await conexao.invoke("TrocarCena", tenantId, urlCompleta);
+        await conexaoRef.current.invoke(
+          "TrocarCena",
+          tenantId,
+          caminhoServidor,
+        );
       } catch (err) {
         console.error("Erro ao avisar os jogadores pelo SignalR:", err);
       }
@@ -158,50 +208,59 @@ export function SessaoAtiva() {
   };
 
   const transmitirMusica = async (caminhoServidor) => {
-    // 1. Toca a música IMEDIATAMENTE para o Mestre
+    setAudioAtivo(caminhoServidor);
+
     if (audioRef.current) {
-      // Se a música atual for diferente da clicada, ele troca a fonte.
-      // Isso evita que a música reinicie caso você clique nela duas vezes.
       if (audioRef.current.src !== caminhoServidor) {
         audioRef.current.src = caminhoServidor;
       }
-      audioRef.current.volume = 0.5;
+      audioRef.current.volume = volume;
 
-      // O catch captura o bloqueio do navegador e impede que o site quebre
       audioRef.current.play().catch((err) => {
         console.error("Navegador bloqueou o áudio do Mestre:", err);
       });
     }
 
-    // 2. Dispara a ordem pelo túnel SignalR para os jogadores
-    if (conexao) {
+    if (conexaoRef.current) {
       try {
-        await conexao.invoke("TocarMusica", tenantId, caminhoServidor);
+        await conexaoRef.current.invoke(
+          "TocarMusica",
+          tenantId,
+          caminhoServidor,
+        );
       } catch (err) {
         console.error("Erro ao enviar música para jogadores:", err);
       }
     }
   };
 
-  // === CONVOCAR JOGADORES ===
-  const tocarTrombeta = async () => {
-    if (conexao) {
-      try {
-        await conexao.invoke("ConvocarJogadores", tenantId);
-        alert(
-          "📯 Trombeta tocada! Convites enviados aos jogadores na Taverna.",
-        );
-      } catch (err) {
-        console.error("Erro ao chamar jogadores:", err);
-      }
-    } else {
-      alert("A conexão com o túnel ainda não está pronta.");
+  const iniciarConvocacao = () => {
+    if (!conexaoRef.current) {
+      return alert("A conexão com o túnel ainda não está pronta.");
     }
+
+    let tempo = 5;
+    setContagem(tempo);
+
+    const intervalo = setInterval(async () => {
+      tempo -= 1;
+      setContagem(tempo);
+
+      if (tempo === 0) {
+        clearInterval(intervalo);
+        try {
+          await conexaoRef.current.invoke("ConvocarJogadores", tenantId);
+          setContagem(null);
+        } catch (err) {
+          console.error("Erro ao convocar:", err);
+          setContagem(null);
+        }
+      }
+    }, 1000);
   };
 
   return (
     <div className="w-screen h-screen bg-black overflow-hidden relative flex flex-col">
-      {/* ATUALIZAÇÃO 2: bg-contain e bg-no-repeat para não cortar a arte */}
       <div
         className="absolute inset-0 bg-contain bg-center bg-no-repeat transition-all duration-1000 ease-in-out"
         style={{
@@ -210,13 +269,10 @@ export function SessaoAtiva() {
         }}
       />
 
-      {/* Sobreposição escura para dar clima e não ofuscar menus */}
       <div className="absolute inset-0 bg-black/40 pointer-events-none" />
 
-      {/* Rádio invisível que toca a música */}
       <audio ref={audioRef} loop />
 
-      {/* Botão de fuga discreto no topo esquerdo */}
       <button
         onClick={() => navigate("/campanha")}
         className="absolute top-4 left-4 z-50 bg-black/50 hover:bg-red-900/80 text-white p-2 rounded-lg backdrop-blur-sm border border-zinc-700 transition-colors"
@@ -224,31 +280,65 @@ export function SessaoAtiva() {
         ⇦ Retornar
       </button>
 
-      {/* ============================================== */}
-      {/* PAINEL DO MESTRE (Só aparece se for o Mestre)  */}
-      {/* ============================================== */}
       {isMestre && (
         <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-50 w-11/12 max-w-4xl bg-zinc-950/90 backdrop-blur-md border border-zinc-800 rounded-2xl p-6 shadow-2xl flex flex-col gap-4">
+          {/* Modal de Preview de Upload */}
+          {arquivoPreview && (
+            <div className="fixed inset-0 z-60 flex items-center justify-center bg-black/90 p-4">
+              <div className="bg-zinc-900 border border-zinc-700 p-6 rounded-xl text-center max-w-sm w-full shadow-2xl">
+                <h3 className="text-white font-bold mb-4">
+                  Confirmar Conjuração?
+                </h3>
+                {arquivoPreview.type.startsWith("image") ? (
+                  <img
+                    src={urlPreview}
+                    alt="Preview"
+                    className="max-h-48 mx-auto rounded mb-4"
+                  />
+                ) : (
+                  <p className="text-zinc-400 mb-4 font-mono text-sm border border-zinc-800 bg-zinc-950 p-2 rounded">
+                    🎵 {arquivoPreview.name}
+                  </p>
+                )}
+                <div className="flex gap-2">
+                  <button
+                    onClick={confirmarUpload}
+                    disabled={uploading}
+                    className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white py-2 rounded font-bold transition-colors"
+                  >
+                    {uploading ? "Enviando..." : "Confirmar e Salvar"}
+                  </button>
+                  <button
+                    onClick={cancelarPreview}
+                    disabled={uploading}
+                    className="flex-1 bg-zinc-800 hover:bg-zinc-700 text-white py-2 rounded font-bold transition-colors border border-zinc-700"
+                  >
+                    Cancelar
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
           <div className="flex justify-between items-center border-b border-zinc-800 pb-2">
             <h3 className="text-red-500 font-bold uppercase tracking-wider">
               Painel de Narração
             </h3>
 
-            {/* Input de Upload Disfarçado de Botão */}
             <label className="bg-zinc-800 hover:bg-zinc-700 text-zinc-100 px-4 py-1.5 rounded cursor-pointer transition-colors border border-zinc-700 text-sm font-semibold">
               {uploading ? "Conjurando..." : "+ Upar Mídia (Soma no Banco)"}
               <input
                 type="file"
                 className="hidden"
                 accept="image/*, audio/*"
-                onChange={handleUpload}
+                onChange={handleSelecionarArquivo}
                 disabled={uploading}
               />
             </label>
           </div>
 
           <div className="grid grid-cols-2 gap-6 h-48 overflow-y-auto pr-2 custom-scrollbar">
-            {/* Coluna de Imagens */}
+            {/* Coluna Imagens */}
             <div>
               <h4 className="text-zinc-400 text-xs mb-3 uppercase font-bold tracking-widest">
                 Cenas (Imagens)
@@ -275,20 +365,31 @@ export function SessaoAtiva() {
                         </span>
                       </button>
 
-                      {/* Novo Botão de Excluir */}
-                      <button
-                        onClick={(e) => handleExcluirMidia(midia.id, e)}
-                        className="p-2 text-zinc-500 hover:text-red-500 hover:bg-red-950/30 rounded border border-transparent hover:border-red-900/50 transition-colors"
-                        title="Excluir Mídia"
-                      >
-                        🗑️
-                      </button>
+                      <div className="flex gap-1 bg-zinc-900/50 rounded border border-zinc-800">
+                        <a
+                          href={midia.caminhoServidor}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="p-2 text-zinc-500 hover:text-blue-400 transition-colors flex items-center justify-center"
+                          title="Abrir ou Baixar Mídia"
+                          download={midia.nomeArquivo || "midia"}
+                        >
+                          🔗
+                        </a>
+                        <button
+                          onClick={(e) => handleExcluirMidia(midia.id, e)}
+                          className="p-2 text-zinc-500 hover:text-red-500 hover:bg-red-950/30 transition-colors flex items-center justify-center"
+                          title="Excluir Mídia"
+                        >
+                          🗑️
+                        </button>
+                      </div>
                     </div>
                   ))}
               </div>
             </div>
 
-            {/* Coluna de Músicas */}
+            {/* Coluna Músicas */}
             <div>
               <h4 className="text-zinc-400 text-xs mb-3 uppercase font-bold tracking-widest">
                 Trilha Sonora
@@ -299,23 +400,59 @@ export function SessaoAtiva() {
                   .map((midia) => (
                     <div
                       key={midia.id}
-                      className="flex items-center gap-2 w-full group"
+                      className="flex flex-col gap-2 w-full group bg-zinc-900/50 p-2 rounded border border-zinc-800"
                     >
-                      <button
-                        onClick={() => transmitirMusica(midia.caminhoServidor)}
-                        className="text-left text-sm text-emerald-500 hover:text-emerald-400 bg-zinc-900/50 hover:bg-zinc-800 p-3 rounded border border-emerald-900/30 truncate transition-colors font-medium flex-1"
-                      >
-                        🎵 {midia.nomeArquivo}
-                      </button>
+                      <div className="flex justify-between items-center w-full">
+                        <button
+                          onClick={() =>
+                            transmitirMusica(midia.caminhoServidor)
+                          }
+                          className="text-left text-sm text-emerald-500 hover:text-emerald-400 truncate transition-colors font-medium flex-1"
+                        >
+                          🎵 {midia.nomeArquivo}
+                        </button>
+                        <div className="flex gap-1">
+                          <a
+                            href={midia.caminhoServidor}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="p-2 text-zinc-500 hover:text-blue-400 transition-colors"
+                            title="Abrir Áudio em Nova Aba"
+                            download={midia.nomeArquivo || "audio"}
+                          >
+                            🔗
+                          </a>
+                          <button
+                            onClick={(e) => handleExcluirMidia(midia.id, e)}
+                            className="p-2 text-zinc-500 hover:text-red-500 hover:bg-red-950/30 rounded transition-colors"
+                            title="Excluir Música"
+                          >
+                            🗑️
+                          </button>
+                        </div>
+                      </div>
 
-                      {/* Novo Botão de Excluir */}
-                      <button
-                        onClick={(e) => handleExcluirMidia(midia.id, e)}
-                        className="p-3 text-zinc-500 hover:text-red-500 hover:bg-red-950/30 rounded border border-transparent hover:border-red-900/50 transition-colors"
-                        title="Excluir Música"
-                      >
-                        🗑️
-                      </button>
+                      {/* Controle de Volume Local */}
+                      {audioAtivo === midia.caminhoServidor && (
+                        <div className="flex items-center gap-2 px-1">
+                          <span className="text-[10px] text-zinc-500">Vol</span>
+                          <input
+                            type="range"
+                            min="0"
+                            max="1"
+                            step="0.05"
+                            value={volume}
+                            onChange={(e) => {
+                              const valor = parseFloat(e.target.value);
+                              setVolume(valor);
+                              if (audioRef.current) {
+                                audioRef.current.volume = valor;
+                              }
+                            }}
+                            className="w-full h-1 bg-zinc-700 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+                          />
+                        </div>
+                      )}
                     </div>
                   ))}
               </div>
@@ -323,15 +460,14 @@ export function SessaoAtiva() {
           </div>
 
           <div className="pt-4 border-t border-zinc-800 flex justify-end">
-            <button className="bg-red-700 hover:bg-red-600 text-white font-bold py-2 px-8 rounded shadow-lg shadow-red-900/20">
-              ⚔️ Iniciar Encontro (Em breve)
-            </button>
-
             <button
-              onClick={tocarTrombeta}
-              className="bg-red-700 hover:bg-red-600 text-white font-bold py-2 px-8 rounded shadow-lg shadow-red-900/20 active:scale-95 transition-all"
+              onClick={iniciarConvocacao}
+              disabled={contagem !== null}
+              className="bg-red-700 hover:bg-red-600 disabled:bg-red-900 text-white font-bold py-2 px-8 rounded shadow-lg shadow-red-900/20 active:scale-95 transition-all"
             >
-              ⚔️ Convocar Aventureiros para o Grid
+              {contagem !== null
+                ? `Preparando portais em ${contagem}...`
+                : "⚔️ Convocar Aventureiros para o Grid"}
             </button>
           </div>
         </div>
