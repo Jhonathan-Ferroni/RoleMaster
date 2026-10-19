@@ -301,11 +301,23 @@ export function CriarFicha() {
     );
 
   return (
-    <div className="min-h-screen bg-zinc-950 text-zinc-100 p-4">
-      <div className="max-w-7xl mx-auto bg-zinc-900 border border-zinc-800 rounded shadow-2xl p-6">
+    <div className="min-h-screen bg-zinc-950 text-zinc-100 p-2.5 sm:p-4">
+      <div className="max-w-7xl mx-auto bg-zinc-900 border border-zinc-800 rounded-xl shadow-2xl p-3.5 sm:p-6">
         {/* CABEÇALHO */}
-        <div className="flex flex-col md:flex-row justify-between items-start md:items-end border-b-4 border-zinc-800 pb-4 mb-6">
-          <div className="w-full md:w-1/3 mb-4 md:mb-0">
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-end border-b-4 border-zinc-800 pb-4 mb-5 sm:mb-6">
+          <div className="w-full md:w-1/3 mb-3 md:mb-0">
+            <div className="flex items-center justify-between mb-2 md:hidden">
+              <button
+                type="button"
+                onClick={() => navigate(-1)}
+                className="text-xs text-zinc-400 hover:text-white bg-zinc-950 px-3 py-1.5 rounded border border-zinc-800 font-semibold"
+              >
+                ← Voltar
+              </button>
+              <span className="text-[10px] uppercase tracking-widest text-zinc-500 font-bold">
+                Ficha D&D 5e
+              </span>
+            </div>
             <input
               disabled={isReadOnly}
               type="text"
@@ -313,10 +325,10 @@ export function CriarFicha() {
               value={ficha.nome}
               onChange={handleChange}
               placeholder="Nome do Personagem"
-              className="w-full bg-transparent text-3xl font-bold text-red-500 placeholder-zinc-700 outline-none border-b border-transparent focus:border-red-900 transition-colors disabled:opacity-80"
+              className="w-full bg-transparent text-2xl sm:text-3xl font-bold text-red-500 placeholder-zinc-700 outline-none border-b border-transparent focus:border-red-900 transition-colors disabled:opacity-80"
             />
           </div>
-          <div className="w-full md:w-2/3 grid grid-cols-3 gap-2 bg-zinc-950/50 p-3 rounded-lg border border-zinc-800">
+          <div className="w-full md:w-2/3 grid grid-cols-2 sm:grid-cols-3 gap-2.5 bg-zinc-950/50 p-3 rounded-lg border border-zinc-800">
             {[
               "classe",
               "nivel",
@@ -338,7 +350,7 @@ export function CriarFicha() {
                   name={campo}
                   value={ficha[campo]}
                   onChange={handleChange}
-                  className="w-full bg-transparent text-sm text-white outline-none border-b border-zinc-800 focus:border-red-500 disabled:opacity-80"
+                  className="w-full bg-transparent text-sm text-white outline-none border-b border-zinc-800 focus:border-red-500 py-0.5 disabled:opacity-80"
                 />
               </div>
             ))}
@@ -347,48 +359,50 @@ export function CriarFicha() {
 
         <form
           onSubmit={handleSubmit}
-          className="grid grid-cols-1 lg:grid-cols-12 gap-6"
+          className="grid grid-cols-1 lg:grid-cols-12 gap-5 sm:gap-6"
         >
-          {/* COLUNA 1: Atributos */}
-          <div className="lg:col-span-3 space-y-4">
-            {atributos.map((attr) => (
-              <div
-                key={attr.key}
-                className="bg-zinc-950 border border-zinc-800 rounded-xl flex flex-col items-center justify-center p-3 relative overflow-hidden"
-              >
-                <span className="text-[10px] font-bold text-zinc-500 uppercase mb-1">
-                  {attr.label}
-                </span>
-                <div className="text-3xl font-bold text-white mb-2">
-                  {exibeMod(ficha[attr.key])}
-                </div>
-                <div className="w-12 bg-zinc-900 border border-zinc-700 rounded-full flex justify-center pb-1">
-                  <input
-                    disabled={isReadOnly}
-                    type="number"
-                    name={attr.key}
-                    value={ficha[attr.key]}
-                    onChange={handleChange}
-                    className="w-8 bg-transparent text-center text-sm font-bold text-zinc-300 outline-none appearance-none disabled:opacity-80"
-                  />
-                </div>
-                <label
-                  className={`mt-3 flex items-center gap-2 text-xs text-zinc-400 transition-colors ${isReadOnly ? "cursor-not-allowed" : "cursor-pointer hover:text-emerald-400"}`}
+          {/* COLUNA 1: Atributos (em Mobile fica uma grade 3x2 super prática!) */}
+          <div className="lg:col-span-3 space-y-3 sm:space-y-4">
+            <div className="grid grid-cols-3 sm:grid-cols-6 lg:grid-cols-1 gap-2.5 sm:gap-3">
+              {atributos.map((attr) => (
+                <div
+                  key={attr.key}
+                  className="bg-zinc-950 border border-zinc-800 rounded-xl flex flex-col items-center justify-center p-2.5 sm:p-3 relative overflow-hidden"
                 >
-                  <input
-                    disabled={isReadOnly}
-                    type="checkbox"
-                    name={attr.save}
-                    checked={ficha[attr.save]}
-                    onChange={handleChange}
-                    className="accent-emerald-500 w-3 h-3 disabled:opacity-80"
-                  />
-                  Salvaguarda
-                </label>
-              </div>
-            ))}
+                  <span className="text-[10px] font-bold text-zinc-500 uppercase mb-0.5">
+                    {attr.label}
+                  </span>
+                  <div className="text-2xl sm:text-3xl font-bold text-white mb-1.5">
+                    {exibeMod(ficha[attr.key])}
+                  </div>
+                  <div className="w-12 bg-zinc-900 border border-zinc-700 rounded-full flex justify-center pb-0.5">
+                    <input
+                      disabled={isReadOnly}
+                      type="number"
+                      name={attr.key}
+                      value={ficha[attr.key]}
+                      onChange={handleChange}
+                      className="w-9 bg-transparent text-center text-sm font-bold text-zinc-300 outline-none appearance-none disabled:opacity-80"
+                    />
+                  </div>
+                  <label
+                    className={`mt-2 flex items-center gap-1.5 text-[10px] sm:text-xs text-zinc-400 transition-colors ${isReadOnly ? "cursor-not-allowed" : "cursor-pointer hover:text-emerald-400"}`}
+                  >
+                    <input
+                      disabled={isReadOnly}
+                      type="checkbox"
+                      name={attr.save}
+                      checked={ficha[attr.save]}
+                      onChange={handleChange}
+                      className="accent-emerald-500 w-3 h-3 disabled:opacity-80"
+                    />
+                    <span className="truncate">Salva.</span>
+                  </label>
+                </div>
+              ))}
+            </div>
 
-            <div className="bg-zinc-950 border border-zinc-800 p-3 rounded flex justify-between items-center">
+            <div className="bg-zinc-950 border border-zinc-800 p-3 rounded-xl flex justify-between items-center">
               <span className="text-xs font-bold text-zinc-500 uppercase">
                 Percepção Passiva
               </span>
@@ -398,14 +412,14 @@ export function CriarFicha() {
                 name="sabedoriaPassivaPercepcao"
                 value={ficha.sabedoriaPassivaPercepcao}
                 onChange={handleChange}
-                className="w-10 bg-zinc-900 border border-zinc-700 rounded p-1 text-center text-white disabled:opacity-80"
+                className="w-12 bg-zinc-900 border border-zinc-700 rounded p-1 text-center text-white font-bold disabled:opacity-80"
               />
             </div>
           </div>
 
           {/* COLUNA 2: Combate, Vida e Perícias */}
-          <div className="lg:col-span-5 space-y-6">
-            <div className="grid grid-cols-3 gap-3 bg-zinc-950/50 p-4 rounded-xl border border-zinc-800/50">
+          <div className="lg:col-span-5 space-y-5 sm:space-y-6">
+            <div className="grid grid-cols-3 gap-2.5 sm:gap-3 bg-zinc-950/50 p-3.5 sm:p-4 rounded-xl border border-zinc-800/50">
               {["classeArmadura", "iniciativa", "deslocamento"].map(
                 (status) => (
                   <div key={status} className="text-center">
@@ -418,14 +432,14 @@ export function CriarFicha() {
                       name={status}
                       value={ficha[status]}
                       onChange={handleChange}
-                      className="w-16 mx-auto bg-zinc-900 border border-zinc-700 rounded-lg p-2 text-2xl font-bold text-white text-center mt-1 disabled:opacity-80"
+                      className="w-16 mx-auto bg-zinc-900 border border-zinc-700 rounded-lg p-2 text-xl sm:text-2xl font-bold text-white text-center mt-1 disabled:opacity-80"
                     />
                   </div>
                 ),
               )}
             </div>
 
-            <div className="bg-zinc-950/50 p-4 rounded-xl border border-zinc-800/50 space-y-3">
+            <div className="bg-zinc-950/50 p-3.5 sm:p-4 rounded-xl border border-zinc-800/50 space-y-3">
               <div className="flex justify-between items-center border-b border-zinc-800 pb-2">
                 <span className="text-xs font-bold text-red-500 uppercase">
                   Pontos de Vida
@@ -438,7 +452,7 @@ export function CriarFicha() {
                     name="pontosDeVidaMaximos"
                     value={ficha.pontosDeVidaMaximos}
                     onChange={handleChange}
-                    className="w-12 bg-zinc-900 border border-zinc-700 rounded p-1 text-center text-xs text-white disabled:opacity-80"
+                    className="w-14 bg-zinc-900 border border-zinc-700 rounded p-1 text-center text-xs text-white font-bold disabled:opacity-80"
                   />
                 </div>
               </div>
@@ -448,9 +462,9 @@ export function CriarFicha() {
                 name="pontosDeVidaAtuais"
                 value={ficha.pontosDeVidaAtuais}
                 onChange={handleChange}
-                className="w-full bg-zinc-900 border border-emerald-900/30 rounded-lg p-4 text-3xl font-bold text-emerald-500 text-center outline-none focus:border-emerald-500 transition-colors disabled:opacity-80"
+                className="w-full bg-zinc-900 border border-emerald-900/30 rounded-lg p-3 sm:p-4 text-3xl font-bold text-emerald-500 text-center outline-none focus:border-emerald-500 transition-colors disabled:opacity-80"
               />
-              <div className="grid grid-cols-2 gap-3 pt-2">
+              <div className="grid grid-cols-2 gap-3 pt-1">
                 <div>
                   <label className="block text-[10px] text-zinc-500 uppercase">
                     HP Temporário
@@ -461,7 +475,7 @@ export function CriarFicha() {
                     name="pontosDeVidaTemporarios"
                     value={ficha.pontosDeVidaTemporarios}
                     onChange={handleChange}
-                    className="w-full bg-zinc-900 border border-blue-900/30 rounded p-1 text-center text-blue-400 disabled:opacity-80"
+                    className="w-full bg-zinc-900 border border-blue-900/30 rounded p-1.5 text-center text-blue-400 disabled:opacity-80"
                   />
                 </div>
                 <div>
@@ -474,17 +488,17 @@ export function CriarFicha() {
                     name="dadoDeVida"
                     value={ficha.dadoDeVida}
                     onChange={handleChange}
-                    className="w-full bg-zinc-900 border border-zinc-700 rounded p-1 text-center text-zinc-300 disabled:opacity-80"
+                    className="w-full bg-zinc-900 border border-zinc-700 rounded p-1.5 text-center text-zinc-300 disabled:opacity-80"
                   />
                 </div>
               </div>
             </div>
 
-            <div className="bg-zinc-950 border border-zinc-800 p-4 rounded-xl">
+            <div className="bg-zinc-950 border border-zinc-800 p-3.5 sm:p-4 rounded-xl">
               <h3 className="text-xs font-bold text-zinc-500 uppercase mb-3 border-b border-zinc-800 pb-2">
                 Perícias
               </h3>
-              <div className="grid grid-cols-2 gap-x-4 gap-y-2">
+              <div className="grid grid-cols-2 gap-x-2.5 sm:gap-x-4 gap-y-2">
                 {Object.keys(ficha)
                   .filter((k) =>
                     [
@@ -513,7 +527,7 @@ export function CriarFicha() {
                       key={pericia}
                       className="flex justify-between items-center bg-zinc-900 p-1.5 rounded border border-zinc-800"
                     >
-                      <span className="text-[10px] text-zinc-400 capitalize truncate w-3/4">
+                      <span className="text-[10px] text-zinc-400 capitalize truncate pr-1">
                         {pericia.replace(/([A-Z])/g, " $1").trim()}
                       </span>
                       <input
@@ -522,7 +536,7 @@ export function CriarFicha() {
                         name={pericia}
                         value={ficha[pericia]}
                         onChange={handleChange}
-                        className="w-8 bg-zinc-950 border border-zinc-700 rounded p-1 text-center text-xs text-white outline-none disabled:opacity-80"
+                        className="w-9 bg-zinc-950 border border-zinc-700 rounded p-1 text-center text-xs text-white outline-none disabled:opacity-80 shrink-0"
                       />
                     </div>
                   ))}
@@ -557,7 +571,7 @@ export function CriarFicha() {
               ))}
             </div>
 
-            <div className="bg-zinc-950 border border-zinc-800 p-4 rounded-xl flex-1 flex flex-col gap-3">
+            <div className="bg-zinc-950 border border-zinc-800 p-3.5 sm:p-4 rounded-xl flex-1 flex flex-col gap-3">
               {[
                 {
                   name: "tracosDePersonalidade",
@@ -582,7 +596,7 @@ export function CriarFicha() {
               ))}
             </div>
 
-            <div className="bg-zinc-950 border border-zinc-800 p-4 rounded-xl flex flex-col gap-3 h-48">
+            <div className="bg-zinc-950 border border-zinc-800 p-3.5 sm:p-4 rounded-xl flex flex-col gap-3 h-48">
               <label className="block text-[10px] font-bold text-zinc-500 uppercase">
                 Características e Talentos
               </label>
@@ -599,9 +613,9 @@ export function CriarFicha() {
           {/* ============================================================== */}
           {/* SEÇÃO NOVA: ARMAS / EQUIPAMENTOS E GRIMÓRIO DE MAGIAS          */}
           {/* ============================================================== */}
-          <div className="lg:col-span-12 grid grid-cols-1 md:grid-cols-2 gap-6 pt-4 border-t border-zinc-800">
+          <div className="lg:col-span-12 grid grid-cols-1 md:grid-cols-2 gap-5 sm:gap-6 pt-4 border-t border-zinc-800">
             {/* COLUNA ARMAS E EQUIPAMENTOS */}
-            <div className="bg-zinc-950 border border-zinc-800 rounded-xl p-4 space-y-4">
+            <div className="bg-zinc-950 border border-zinc-800 rounded-xl p-3.5 sm:p-4 space-y-4">
               <div className="flex justify-between items-center border-b border-zinc-800 pb-2">
                 <h3 className="text-xs font-bold text-red-500 uppercase tracking-wider">
                   ⚔️ Armas & Equipamentos de Combate ({(ficha.equipamento || []).length})
@@ -613,7 +627,7 @@ export function CriarFicha() {
                   {/* Atalhos Rápidos D&D 5e */}
                   <div>
                     <span className="block text-[10px] text-zinc-500 uppercase font-bold mb-1.5">
-                      Adicionar Arma Clássica D&D (1 Clique):
+                      Adicionar Arma Clássica D&D (1 Toque):
                     </span>
                     <div className="flex flex-wrap gap-1.5">
                       {ARMAS_RAPIDAS.map((a) => (
@@ -621,7 +635,7 @@ export function CriarFicha() {
                           key={a.name}
                           type="button"
                           onClick={() => adicionarArma(a)}
-                          className="bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 text-zinc-300 px-2 py-1 rounded text-[10px] font-semibold transition-colors"
+                          className="bg-zinc-900 hover:bg-zinc-800 active:bg-zinc-700 border border-zinc-700 text-zinc-300 px-2.5 py-1.5 rounded text-[10px] font-semibold transition-colors"
                         >
                           + {a.name} ({a.damage})
                         </button>
@@ -638,16 +652,16 @@ export function CriarFicha() {
                       onChange={(e) =>
                         setNovaArma({ ...novaArma, name: e.target.value })
                       }
-                      className="col-span-5 bg-zinc-950 border border-zinc-700 rounded px-2 py-1.5 text-xs text-white"
+                      className="col-span-8 sm:col-span-5 bg-zinc-950 border border-zinc-700 rounded px-2.5 py-2 text-xs text-white"
                     />
                     <input
                       type="text"
-                      placeholder="Dano (ex: 1d8)"
+                      placeholder="Dano (1d8)"
                       value={novaArma.damage}
                       onChange={(e) =>
                         setNovaArma({ ...novaArma, damage: e.target.value })
                       }
-                      className="col-span-2 bg-zinc-950 border border-zinc-700 rounded px-2 py-1.5 text-xs text-white text-center font-mono"
+                      className="col-span-4 sm:col-span-2 bg-zinc-950 border border-zinc-700 rounded px-2 py-2 text-xs text-white text-center font-mono"
                     />
                     <input
                       type="text"
@@ -656,12 +670,12 @@ export function CriarFicha() {
                       onChange={(e) =>
                         setNovaArma({ ...novaArma, properties: e.target.value })
                       }
-                      className="col-span-3 bg-zinc-950 border border-zinc-700 rounded px-2 py-1.5 text-xs text-white"
+                      className="col-span-8 sm:col-span-3 bg-zinc-950 border border-zinc-700 rounded px-2.5 py-2 text-xs text-white"
                     />
                     <button
                       type="button"
                       onClick={() => adicionarArma()}
-                      className="col-span-2 bg-red-700 hover:bg-red-600 text-white rounded text-xs font-bold"
+                      className="col-span-4 sm:col-span-2 bg-red-700 hover:bg-red-600 text-white rounded py-2 text-xs font-bold"
                     >
                       + Add
                     </button>
@@ -670,7 +684,7 @@ export function CriarFicha() {
               )}
 
               {/* Lista de Armas Cadastradas */}
-              <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+              <div className="space-y-2 max-h-48 overflow-y-auto pr-1 custom-scrollbar">
                 {(ficha.equipamento || []).length === 0 ? (
                   <p className="text-xs text-zinc-500 italic text-center py-4">
                     Nenhuma arma vinculada ainda. Adicione acima para usá-la no Tabuleiro!
@@ -681,14 +695,14 @@ export function CriarFicha() {
                       key={i}
                       className="flex items-center justify-between bg-zinc-900 border border-zinc-800 px-3 py-2 rounded-lg text-xs"
                     >
-                      <div>
+                      <div className="min-w-0 pr-2">
                         <span className="font-bold text-white mr-2">
                           ⚔️ {eq.name}
                         </span>
                         <span className="text-red-400 font-mono font-bold mr-2">
                           [{eq.damage}]
                         </span>
-                        <span className="text-zinc-400 text-[11px]">
+                        <span className="text-zinc-400 text-[11px] block sm:inline">
                           {eq.properties}
                         </span>
                       </div>
@@ -696,7 +710,7 @@ export function CriarFicha() {
                         <button
                           type="button"
                           onClick={() => removerArma(i)}
-                          className="text-zinc-500 hover:text-red-500 font-bold px-2"
+                          className="text-zinc-500 hover:text-red-500 font-bold px-2 py-1 shrink-0"
                         >
                           ✕
                         </button>
@@ -708,7 +722,7 @@ export function CriarFicha() {
             </div>
 
             {/* COLUNA GRIMÓRIO DE MAGIAS E HABILIDADES */}
-            <div className="bg-zinc-950 border border-zinc-800 rounded-xl p-4 space-y-4">
+            <div className="bg-zinc-950 border border-zinc-800 rounded-xl p-3.5 sm:p-4 space-y-4">
               <div className="flex justify-between items-center border-b border-zinc-800 pb-2">
                 <h3 className="text-xs font-bold text-purple-400 uppercase tracking-wider">
                   ✨ Grimório de Magias & Habilidades ({(ficha.magia || []).length})
@@ -720,7 +734,7 @@ export function CriarFicha() {
                   {/* Atalhos Rápidos de Magias */}
                   <div>
                     <span className="block text-[10px] text-zinc-500 uppercase font-bold mb-1.5">
-                      Adicionar Magia/Habilidade D&D (1 Clique):
+                      Adicionar Magia/Habilidade D&D (1 Toque):
                     </span>
                     <div className="flex flex-wrap gap-1.5">
                       {MAGIAS_RAPIDAS.map((m) => (
@@ -728,7 +742,7 @@ export function CriarFicha() {
                           key={m.name}
                           type="button"
                           onClick={() => adicionarMagia(m)}
-                          className="bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 text-purple-300 px-2 py-1 rounded text-[10px] font-semibold transition-colors"
+                          className="bg-zinc-900 hover:bg-zinc-800 active:bg-zinc-700 border border-zinc-700 text-purple-300 px-2.5 py-1.5 rounded text-[10px] font-semibold transition-colors"
                         >
                           + {m.name}
                         </button>
@@ -746,14 +760,14 @@ export function CriarFicha() {
                         onChange={(e) =>
                           setNovaMagia({ ...novaMagia, name: e.target.value })
                         }
-                        className="col-span-5 bg-zinc-950 border border-zinc-700 rounded px-2 py-1.5 text-xs text-white"
+                        className="col-span-12 sm:col-span-5 bg-zinc-950 border border-zinc-700 rounded px-2.5 py-2 text-xs text-white"
                       />
                       <select
                         value={novaMagia.tipoAcao}
                         onChange={(e) =>
                           setNovaMagia({ ...novaMagia, tipoAcao: e.target.value })
                         }
-                        className="col-span-3 bg-zinc-950 border border-zinc-700 rounded px-2 py-1.5 text-xs text-white"
+                        className="col-span-5 sm:col-span-3 bg-zinc-950 border border-zinc-700 rounded px-2 py-2 text-xs text-white"
                       >
                         <option value="ataque">🔮 Dano</option>
                         <option value="cura">✨ Cura</option>
@@ -765,7 +779,7 @@ export function CriarFicha() {
                         onChange={(e) =>
                           setNovaMagia({ ...novaMagia, dados: e.target.value })
                         }
-                        className="col-span-2 bg-zinc-950 border border-zinc-700 rounded px-2 py-1.5 text-xs text-white text-center font-mono"
+                        className="col-span-4 sm:col-span-2 bg-zinc-950 border border-zinc-700 rounded px-2 py-2 text-xs text-white text-center font-mono"
                       />
                       <input
                         type="number"
@@ -774,7 +788,7 @@ export function CriarFicha() {
                         onChange={(e) =>
                           setNovaMagia({ ...novaMagia, slot: e.target.value })
                         }
-                        className="col-span-2 bg-zinc-950 border border-zinc-700 rounded px-2 py-1.5 text-xs text-white text-center"
+                        className="col-span-3 sm:col-span-2 bg-zinc-950 border border-zinc-700 rounded px-2 py-2 text-xs text-white text-center"
                       />
                     </div>
                     <div className="flex gap-2">
@@ -788,12 +802,12 @@ export function CriarFicha() {
                             description: e.target.value,
                           })
                         }
-                        className="flex-1 bg-zinc-950 border border-zinc-700 rounded px-2 py-1.5 text-xs text-white"
+                        className="flex-1 bg-zinc-950 border border-zinc-700 rounded px-2.5 py-2 text-xs text-white"
                       />
                       <button
                         type="button"
                         onClick={() => adicionarMagia()}
-                        className="bg-purple-700 hover:bg-purple-600 text-white px-4 py-1.5 rounded text-xs font-bold"
+                        className="bg-purple-700 hover:bg-purple-600 text-white px-4 py-2 rounded text-xs font-bold shrink-0"
                       >
                         + Add
                       </button>
@@ -803,7 +817,7 @@ export function CriarFicha() {
               )}
 
               {/* Lista de Magias Cadastradas */}
-              <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+              <div className="space-y-2 max-h-48 overflow-y-auto pr-1 custom-scrollbar">
                 {(ficha.magia || []).length === 0 ? (
                   <p className="text-xs text-zinc-500 italic text-center py-4">
                     Nenhuma magia ou habilidade especial cadastrada.
@@ -815,7 +829,7 @@ export function CriarFicha() {
                       className="flex items-center justify-between bg-zinc-900 border border-zinc-800 px-3 py-2 rounded-lg text-xs"
                     >
                       <div className="min-w-0 pr-2">
-                        <div className="flex items-center gap-2">
+                        <div className="flex flex-wrap items-center gap-1.5">
                           <span className="font-bold text-purple-300">
                             ✨ {m.name}
                           </span>
@@ -838,7 +852,7 @@ export function CriarFicha() {
                         <button
                           type="button"
                           onClick={() => removerMagia(i)}
-                          className="text-zinc-500 hover:text-red-500 font-bold px-2"
+                          className="text-zinc-500 hover:text-red-500 font-bold px-2 py-1 shrink-0"
                         >
                           ✕
                         </button>
@@ -851,11 +865,11 @@ export function CriarFicha() {
           </div>
 
           {/* BOTÕES DE AÇÃO */}
-          <div className="lg:col-span-12 flex justify-end gap-4 mt-6 pt-6 border-t border-zinc-800">
+          <div className="lg:col-span-12 flex flex-col-reverse sm:flex-row justify-end gap-3 sm:gap-4 mt-4 sm:mt-6 pt-5 border-t border-zinc-800">
             <button
               type="button"
               onClick={() => navigate(-1)}
-              className="px-6 py-2 rounded font-bold text-zinc-400 hover:text-white transition-colors"
+              className="w-full sm:w-auto px-6 py-2.5 rounded-lg font-bold text-zinc-400 hover:text-white bg-zinc-950 sm:bg-transparent border border-zinc-800 sm:border-transparent transition-colors"
             >
               {isReadOnly ? "Voltar" : "Cancelar"}
             </button>
@@ -864,7 +878,7 @@ export function CriarFicha() {
               <button
                 type="submit"
                 disabled={enviando}
-                className="px-8 py-2 bg-red-700 hover:bg-red-600 disabled:bg-zinc-700 text-white font-bold rounded transition-colors shadow-lg shadow-red-900/20 uppercase tracking-widest text-sm"
+                className="w-full sm:w-auto px-8 py-3 sm:py-2.5 bg-red-700 hover:bg-red-600 disabled:bg-zinc-700 text-white font-bold rounded-lg transition-colors shadow-lg shadow-red-900/20 uppercase tracking-widest text-sm"
               >
                 {enviando
                   ? "Processando..."

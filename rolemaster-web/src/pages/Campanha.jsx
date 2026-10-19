@@ -164,52 +164,52 @@ export function Campanha() {
         </div>
       )}
 
-      <header className="bg-zinc-900 border-b border-zinc-800 p-4 shadow-md">
-        <div className="max-w-7xl mx-auto flex justify-between items-center">
-          <div className="flex items-center space-x-4">
+      <header className="bg-zinc-900 border-b border-zinc-800 p-3.5 sm:p-4 shadow-md">
+        <div className="max-w-7xl mx-auto flex flex-wrap justify-between items-center gap-2">
+          <div className="flex items-center space-x-2.5 sm:space-x-4 min-w-0">
             <button
               onClick={voltarParaLobby}
-              className="text-zinc-400 hover:text-white transition-colors"
+              className="text-xs sm:text-sm text-zinc-400 hover:text-white transition-colors shrink-0"
             >
-              ← Voltar ao Lobby
+              ← Lobby
             </button>
-            <h1 className="text-2xl font-bold text-red-600 uppercase tracking-wider border-l border-zinc-700 pl-4">
+            <h1 className="text-lg sm:text-2xl font-bold text-red-600 uppercase tracking-wider border-l border-zinc-700 pl-2.5 sm:pl-4 truncate">
               {mesa.nome}
             </h1>
           </div>
-          <div className="text-sm text-zinc-500 font-mono">
+          <div className="text-xs sm:text-sm text-zinc-400 font-mono bg-zinc-950 px-2.5 py-1 rounded border border-zinc-800">
             Código: {mesa.codigoConvite}
           </div>
         </div>
       </header>
 
-      <main className="flex-1 max-w-7xl w-full mx-auto p-6">
+      <main className="flex-1 max-w-7xl w-full mx-auto p-3.5 sm:p-6">
         {mesa.isMestre ? (
-          <div className="space-y-8">
-            <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-8 text-center shadow-lg">
-              <h2 className="text-3xl font-bold text-zinc-100 mb-2">
+          <div className="space-y-6 sm:space-y-8">
+            <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-5 sm:p-8 text-center shadow-lg">
+              <h2 className="text-2xl sm:text-3xl font-bold text-zinc-100 mb-2">
                 Painel do Mestre
               </h2>
-              <p className="text-zinc-400 mb-8">
+              <p className="text-sm sm:text-base text-zinc-400 mb-6 sm:mb-8">
                 Controle o destino dos seus aventureiros e prepare o mundo.
               </p>
 
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5 sm:gap-6">
                 <button
                   onClick={() => navigate("/criar-ficha")}
-                  className="bg-zinc-800 hover:bg-zinc-700 text-zinc-200 py-4 px-6 rounded-lg font-bold border border-zinc-700 transition-all shadow-md"
+                  className="bg-zinc-800 hover:bg-zinc-700 text-zinc-200 py-3.5 sm:py-4 px-5 rounded-lg font-bold border border-zinc-700 transition-all shadow-md text-sm sm:text-base"
                 >
                   🧙‍♂️ Criar Personagem/NPC
                 </button>
                 <button
                   onClick={() => navigate("/aprovacao-fichas")}
-                  className="bg-zinc-800 hover:bg-zinc-700 text-zinc-200 py-4 px-6 rounded-lg font-bold border border-zinc-700 transition-all shadow-md"
+                  className="bg-zinc-800 hover:bg-zinc-700 text-zinc-200 py-3.5 sm:py-4 px-5 rounded-lg font-bold border border-zinc-700 transition-all shadow-md text-sm sm:text-base"
                 >
                   🔗 Gerenciar & Aprovar Fichas
                 </button>
                 <button
                   onClick={() => navigate("/sessao-ativa")}
-                  className="bg-red-700 hover:bg-red-600 text-white py-4 px-6 rounded-lg font-bold transition-all shadow-lg shadow-red-900/20"
+                  className="bg-red-700 hover:bg-red-600 text-white py-3.5 sm:py-4 px-5 rounded-lg font-bold transition-all shadow-lg shadow-red-900/20 text-sm sm:text-base"
                 >
                   ⚔️ Iniciar Storytelling / Batalha
                 </button>
@@ -217,11 +217,11 @@ export function Campanha() {
             </div>
 
             {solicitacoes.length > 0 && (
-              <div className="bg-red-900/10 border border-red-900/40 rounded-xl p-6">
-                <h3 className="text-xl font-bold text-red-500 mb-2">
+              <div className="bg-red-900/10 border border-red-900/40 rounded-xl p-4 sm:p-6">
+                <h3 className="text-lg sm:text-xl font-bold text-red-500 mb-2">
                   Aventureiros na Taverna ({solicitacoes.length})
                 </h3>
-                <p className="text-sm text-zinc-400 mb-6">
+                <p className="text-xs sm:text-sm text-zinc-400 mb-4 sm:mb-6">
                   Você tem solicitações pendentes. Libere a entrada deles para
                   começarem a enviar fichas.
                 </p>
@@ -229,25 +229,25 @@ export function Campanha() {
                   {solicitacoes.map((solic) => (
                     <div
                       key={solic.id}
-                      className="flex items-center justify-between bg-zinc-900/80 border border-zinc-800 p-4 rounded-lg shadow-sm"
+                      className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-zinc-900/80 border border-zinc-800 p-3.5 sm:p-4 rounded-lg shadow-sm"
                     >
-                      <span className="text-zinc-300">
+                      <span className="text-sm text-zinc-300">
                         🧙‍♂️ O jogador{" "}
-                        <strong className="text-white text-lg ml-1 mr-1">
+                        <strong className="text-white text-base sm:text-lg ml-1 mr-1">
                           {solic.nomeJogador}
                         </strong>{" "}
                         quer entrar na guilda!
                       </span>
-                      <div className="flex space-x-3">
+                      <div className="flex gap-2.5">
                         <button
                           onClick={() => avaliarJogador(solic.id, true)}
-                          className="bg-emerald-600 hover:bg-emerald-500 text-white px-5 py-2 rounded-md font-semibold transition-colors"
+                          className="flex-1 sm:flex-none bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-md text-xs sm:text-sm font-semibold transition-colors"
                         >
                           Permitir
                         </button>
                         <button
                           onClick={() => avaliarJogador(solic.id, false)}
-                          className="bg-zinc-800 hover:bg-red-600 text-zinc-300 hover:text-white px-5 py-2 rounded-md font-semibold transition-colors border border-zinc-700 hover:border-red-500"
+                          className="flex-1 sm:flex-none bg-zinc-800 hover:bg-red-600 text-zinc-300 hover:text-white px-4 py-2 rounded-md text-xs sm:text-sm font-semibold transition-colors border border-zinc-700 hover:border-red-500"
                         >
                           Expulsar
                         </button>
@@ -259,14 +259,14 @@ export function Campanha() {
             )}
           </div>
         ) : (
-          <div className="space-y-8">
-            <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-8 shadow-lg">
-              <div className="flex justify-between items-center mb-6">
+          <div className="space-y-6 sm:space-y-8">
+            <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 sm:p-8 shadow-lg">
+              <div className="flex justify-between items-center mb-5 sm:mb-6">
                 <div>
-                  <h2 className="text-2xl font-bold text-emerald-500 mb-1">
+                  <h2 className="text-xl sm:text-2xl font-bold text-emerald-500 mb-1">
                     Seus Personagens ({minhasFichas.length})
                   </h2>
-                  <p className="text-zinc-400 text-sm">
+                  <p className="text-zinc-400 text-xs sm:text-sm">
                     Gerencie seus heróis desta campanha ou submeta uma nova ficha para o Mestre.
                   </p>
                 </div>

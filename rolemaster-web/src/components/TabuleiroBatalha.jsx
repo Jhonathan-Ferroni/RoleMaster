@@ -83,7 +83,7 @@ export function TabuleiroBatalha({
     props: [...CENARIOS_PADROES[0].props],
   }));
 
-  // === ESTADO DE COMBATE (TOKENS, INICIATIVA, RODADA, LOGS) ===
+  // === ESTADO DE COMBATE ===
   const [tokens, setTokens] = useState([]);
   const [rodada, setRodada] = useState(1);
   const [turnoIndex, setTurnoIndex] = useState(0);
@@ -97,16 +97,20 @@ export function TabuleiroBatalha({
     },
   ]);
 
-  // === INTERAÇÃO E SELEÇÃO NO GRID ===
+  // === INTERAÇÃO, ZOOM MOBILE E GAVETA RESPONSIVA ===
   const [tokenSelecionadoId, setTokenSelecionadoId] = useState(null);
   const [modoInteracao, setModoInteracao] = useState("mover"); // 'mover' | 'acao' | 'spawn' | 'prop'
   const [acaoSelecionada, setAcaoSelecionada] = useState(null);
-  const [modoRolagemD20, setModoRolagemD20] = useState("normal"); // 'normal' | 'vantagem' | 'desvantagem'
+  const [modoRolagemD20, setModoRolagemD20] = useState("normal");
+  const [abaLateral, setAbaLateral] = useState("combate"); // 'combate' | 'spawn' | 'cenario' | 'logs'
+  const [gavetaMobileAberta, setGavetaMobileAberta] = useState(false);
+  const [tamanhoCelula, setTamanhoCelula] = useState(() =>
+    typeof window !== "undefined" && window.innerWidth < 768 ? 40 : 50
+  );
 
   // === CONTROLES DE SPAWN E EDITOR DE CENÁRIO (MESTRE) ===
-  const [abaLateral, setAbaLateral] = useState("combate"); // 'combate' | 'spawn' | 'cenario'
   const [fichaParaSpawnId, setFichaParaSpawnId] = useState("");
-  const [faccaoSpawn, setFaccaoSpawn] = useState("heroi"); // 'heroi' | 'inimigo' | 'neutro'
+  const [faccaoSpawn, setFaccaoSpawn] = useState("heroi");
   const [spawnOculto, setSpawnOculto] = useState(false);
   const [propSelecionado, setPropSelecionado] = useState(PROPS_CATALOGO[0]);
   const [modoBorrachaProp, setModoBorrachaProp] = useState(false);
@@ -116,7 +120,6 @@ export function TabuleiroBatalha({
   const [fichaModalAberta, setFichaModalAberta] = useState(false);
   const [fichaModalDados, setFichaModalDados] = useState({ id: null, objeto: null });
 
-  // Verifica se o usuário atual tem permissão para controlar um token específico
   const podeControlarToken = (tok) => {
     if (!tok) return false;
     if (isMestre) return true;
@@ -428,7 +431,6 @@ export function TabuleiroBatalha({
     return novoLog;
   };
 
-  // Filtra tokens visíveis para jogadores (Mestre vê todos, inclusive ocultos)
   const tokensVisiveis = useMemo(
     () => (isMestre ? tokens : tokens.filter((t) => !t.oculto)),
     [tokens, isMestre]
@@ -463,7 +465,6 @@ export function TabuleiroBatalha({
     return Number((distBase + penalidadeTerreno).toFixed(1));
   };
 
-  // === SPAWNAR PERSONAGEM NO GRID ===
   const spawnarPersonagemNaCelula = async (x, y) => {
     if (!isMestre) return;
     const ocupado = tokens.find((t) => t.x === x && t.y === y);
@@ -479,6 +480,8 @@ export function TabuleiroBatalha({
 
     const fichaBase = fichasMesa.find((f) => String(f.id) === String(fichaParaSpawnId));
     if (!fichaBase) {
+      setGavetaMobileAberta(true);
+      setAbaLateral("spawn");
       return alert(
         "Selecione uma ficha na aba 'Fichas/Spawn' ou clique em '⚡ Gerar Fichas Padrões D&D' primeiro!"
       );
@@ -562,7 +565,6 @@ export function TabuleiroBatalha({
     });
   };
 
-  // === SINCRONIZAR HP NA FICHA DO BANCO DE DADOS ===
   const sincronizarHpNoBanco = async (tokenAtualizado) => {
     if (!tokenAtualizado?.fichaId || typeof tokenAtualizado.fichaId !== "number") return;
     if (tokenAtualizado.nome.includes("#")) return;
@@ -591,7 +593,6 @@ export function TabuleiroBatalha({
     }
   };
 
-  // === MOVER TOKEN NO TABULEIRO ===
   const moverTokenParaCelula = async (x, y) => {
     if (!tokenSelecionado) return;
     if (!podeControlarToken(tokenSelecionado)) {
@@ -674,7 +675,6 @@ export function TabuleiroBatalha({
     });
   };
 
-  // === EXECUTAR ATAQUE OU CURA SOBRE UM ALVO ===
   const executarAcaoNoAlvo = async (alvoToken) => {
     if (!tokenSelecionado || !acaoSelecionada) return;
     if (!podeControlarToken(tokenSelecionado)) {
@@ -751,7 +751,6 @@ export function TabuleiroBatalha({
       const alvoAtualizado = novosTokens.find((t) => t.id === alvoToken.id);
       void sincronizarHpNoBanco(alvoAtualizado);
     } else {
-      // === REGRA D&D 5e: ATAQUE COM CONDIÇÕES AUTOMÁTICAS ===
       const d1 = rolarDado(20);
       const d2 = rolarDado(20);
 
@@ -779,7 +778,6 @@ export function TabuleiroBatalha({
             ? Math.min(d1, d2)
             : d1;
 
-      // Bônus de Bênção (+1d4) se o atacante estiver Abençoado
       const bonusBencao = condAtacante.includes("abencoado") ? rolarDado(4) : 0;
 
       const isCritico = d20Escolhido === 20;
@@ -875,7 +873,6 @@ export function TabuleiroBatalha({
     });
   };
 
-  // === CONDIÇÕES D&D, VISIBILIDADE E DESCANSO ===
   const alternarCondicaoToken = async (condId) => {
     if (!tokenSelecionado) return;
     const atuais = tokenSelecionado.condicoes || [];
@@ -955,7 +952,7 @@ export function TabuleiroBatalha({
     try {
       await api.post(`/characters/mesa/${tenantId}/descanso-longo`);
     } catch {
-      // continua localmente e por token
+      // continua localmente
     }
 
     const novosTokens = tokens.map((t) => {
@@ -988,7 +985,6 @@ export function TabuleiroBatalha({
     });
   };
 
-  // === AÇÕES TÁTICAS DE TURNO (DISPARADA, ESQUIVAR, SALVAGUARDA CONTRA A MORTE) ===
   const usarDisparada = async () => {
     if (!tokenSelecionado) return;
     if (!podeControlarToken(tokenSelecionado)) {
@@ -1093,7 +1089,6 @@ export function TabuleiroBatalha({
     });
   };
 
-  // === CONTROLE DE INICIATIVA E TURNOS ===
   const iniciarOuReiniciarCombate = async () => {
     if (tokens.length === 0) {
       return alert("Spawne pelo menos um personagem no tabuleiro antes de iniciar o combate!");
@@ -1253,10 +1248,22 @@ export function TabuleiroBatalha({
     }
   };
 
+  const selecionarAbaMobile = (novaAba) => {
+    if (novaAba === "mapa") {
+      setGavetaMobileAberta(false);
+      return;
+    }
+    setAbaLateral(novaAba);
+    setGavetaMobileAberta(true);
+    if (novaAba === "spawn" && isMestre) setModoInteracao("spawn");
+    else if (novaAba === "cenario" && isMestre) setModoInteracao("prop");
+    else if (novaAba === "combate") setModoInteracao("mover");
+  };
+
   const temaVisual = TEMAS_TABULEIRO[cenarioAtual.tema] || TEMAS_TABULEIRO.masmorra;
 
   return (
-    <div className="w-screen h-screen bg-zinc-950 text-zinc-100 flex flex-col overflow-hidden select-none z-40">
+    <div className="w-screen h-[100dvh] bg-zinc-950 text-zinc-100 flex flex-col overflow-hidden select-none z-40">
       <FichaModal
         isOpen={fichaModalAberta}
         onClose={() => setFichaModalAberta(false)}
@@ -1264,33 +1271,98 @@ export function TabuleiroBatalha({
         fichaObjeto={fichaModalDados.objeto}
       />
 
-      {/* BARRA SUPERIOR: ORDEM DE INICIATIVA E CONTROLES GERAIS */}
-      <header className="bg-zinc-900/95 border-b border-zinc-800 px-4 py-2.5 flex flex-wrap items-center justify-between gap-3 shrink-0 shadow-lg">
-        <div className="flex items-center gap-3">
-          <button
-            onClick={onVoltarStorytelling}
-            className="bg-zinc-800 hover:bg-zinc-700 text-zinc-200 px-3 py-1.5 rounded-lg text-xs font-bold border border-zinc-700 transition-colors flex items-center gap-1.5"
-          >
-            📖 Modo Storytelling
-          </button>
+      {/* BARRA SUPERIOR RESPONSIVA (DESKTOP & MOBILE) */}
+      <header className="bg-zinc-900/95 border-b border-zinc-800 px-2.5 sm:px-4 py-2 flex flex-col gap-2 shrink-0 shadow-lg">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 min-w-0">
+            <button
+              onClick={onVoltarStorytelling}
+              className="bg-zinc-800 hover:bg-zinc-700 text-zinc-200 px-2.5 py-1.5 rounded-lg text-xs font-bold border border-zinc-700 transition-colors shrink-0"
+            >
+              📖 <span className="hidden sm:inline">Modo Storytelling</span>
+              <span className="sm:hidden">Narrativa</span>
+            </button>
 
-          <div className="border-l border-zinc-800 pl-3">
-            <div className="flex items-center gap-2">
-              <span className="text-red-500 font-extrabold uppercase tracking-wider text-sm">
+            <div className="border-l border-zinc-800 pl-2 min-w-0">
+              <span className="text-red-500 font-extrabold uppercase tracking-wider text-xs sm:text-sm truncate block">
                 ⚔️ {cenarioAtual.nome}
-              </span>
-              <span className="text-[11px] bg-zinc-800 text-zinc-400 px-2 py-0.5 rounded font-mono">
-                {cenarioAtual.largura}x{cenarioAtual.altura} (1 quad = 1,5m)
               </span>
             </div>
           </div>
+
+          {/* Controles de Zoom do Grid + Turno/Iniciativa */}
+          <div className="flex items-center gap-1.5 shrink-0">
+            {/* Controle de Zoom amigável para Mobile */}
+            <div className="flex items-center bg-zinc-950 border border-zinc-800 rounded-lg p-0.5">
+              <button
+                onClick={() => setTamanhoCelula((prev) => Math.max(28, prev - 6))}
+                className="px-2 py-1 text-xs font-bold text-zinc-400 hover:text-white"
+                title="Diminuir Zoom do Tabuleiro"
+              >
+                −
+              </button>
+              <span className="text-[10px] font-mono text-zinc-500 px-1 hidden sm:inline">
+                Zoom
+              </span>
+              <button
+                onClick={() => setTamanhoCelula((prev) => Math.min(72, prev + 6))}
+                className="px-2 py-1 text-xs font-bold text-zinc-400 hover:text-white"
+                title="Aumentar Zoom do Tabuleiro"
+              >
+                +
+              </button>
+            </div>
+
+            {isMestre && (
+              <div className="hidden md:flex items-center gap-1.5">
+                <button
+                  onClick={realizarDescansoCurto}
+                  title="Recuperar PV com Dados de Vida"
+                  className="bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-zinc-200 px-2.5 py-1.5 rounded-lg text-xs font-bold"
+                >
+                  ⛺ Curto
+                </button>
+                <button
+                  onClick={realizarDescansoLongo}
+                  title="Restaurar 100% dos PV e limpar condições"
+                  className="bg-indigo-950 hover:bg-indigo-900 border border-indigo-700 text-indigo-200 px-2.5 py-1.5 rounded-lg text-xs font-bold"
+                >
+                  🌙 Longo
+                </button>
+              </div>
+            )}
+
+            {combateIniciado && (
+              <div className="bg-red-950/60 border border-red-800/70 px-2 py-1 rounded-lg text-[11px] font-bold text-red-300">
+                R{rodada}
+              </div>
+            )}
+
+            {isMestre && (
+              <button
+                onClick={iniciarOuReiniciarCombate}
+                className="bg-amber-700 hover:bg-amber-600 text-white px-2.5 py-1.5 rounded-lg text-xs font-bold transition-colors shadow"
+              >
+                🎲 <span className="hidden sm:inline">{combateIniciado ? "Rerrolar" : "Iniciativa"}</span>
+              </button>
+            )}
+
+            {combateIniciado && (
+              <button
+                onClick={avancarProximoTurno}
+                className="bg-emerald-600 hover:bg-emerald-500 text-white px-2.5 py-1.5 rounded-lg text-xs font-bold transition-colors shadow"
+              >
+                Turno ⏭️
+              </button>
+            )}
+          </div>
         </div>
 
-        {/* TRACKER DE INICIATIVA CENTRAL */}
-        <div className="flex items-center gap-2 overflow-x-auto max-w-2xl py-0.5">
+        {/* BARRA HORIZONTAL DESLIZÁVEL DE INICIATIVA (OTIMIZADA PARA TOQUE) */}
+        <div className="flex items-center gap-1.5 overflow-x-auto custom-scrollbar pb-0.5">
           {tokensVisiveis.length === 0 ? (
-            <span className="text-xs text-zinc-500 italic">
-              Nenhum combatente visível no grid...
+            <span className="text-[11px] text-zinc-500 italic">
+              Nenhum combatente no grid — use a aba &quot;Fichas/Spawn&quot; para posicionar heróis e monstros!
             </span>
           ) : (
             tokensVisiveis.map((t) => {
@@ -1309,14 +1381,14 @@ export function TabuleiroBatalha({
                       ? "bg-amber-950/90 border-amber-400 text-amber-200 ring-2 ring-amber-500/40 font-bold"
                       : isSel
                         ? "bg-zinc-800 border-zinc-400 text-white"
-                        : "bg-zinc-950/80 border-zinc-800 text-zinc-400 hover:border-zinc-700"
+                        : "bg-zinc-950/80 border-zinc-800 text-zinc-400"
                   } ${t.hpAtual <= 0 ? "opacity-50 line-through" : ""} ${
                     t.oculto ? "border-dashed border-purple-500 opacity-75" : ""
                   }`}
                 >
                   <span>{t.icone}</span>
-                  <span className="max-w-[90px] truncate">{t.nome}</span>
-                  {t.oculto && <span title="Oculto para jogadores">👻</span>}
+                  <span className="max-w-[80px] truncate">{t.nome}</span>
+                  {t.oculto && <span>👻</span>}
                   <span className="text-[10px] font-mono bg-black/50 px-1 rounded text-amber-400">
                     🎲{t.iniciativa}
                   </span>
@@ -1332,294 +1404,264 @@ export function TabuleiroBatalha({
             })
           )}
         </div>
-
-        {/* CONTROLES DE RODADA, TURNO E DESCANSO */}
-        <div className="flex items-center gap-2">
-          {isMestre && (
-            <>
-              <button
-                onClick={realizarDescansoCurto}
-                title="Recuperar PV com Dados de Vida"
-                className="bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-zinc-200 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-colors"
-              >
-                ⛺ Descanso Curto
-              </button>
-              <button
-                onClick={realizarDescansoLongo}
-                title="Restaurar 100% dos PV e limpar condições dos heróis"
-                className="bg-indigo-950 hover:bg-indigo-900 border border-indigo-700 text-indigo-200 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-colors"
-              >
-                🌙 Descanso Longo
-              </button>
-            </>
-          )}
-
-          {combateIniciado && (
-            <div className="bg-red-950/60 border border-red-800/70 px-3 py-1 rounded-lg text-xs font-bold text-red-300">
-              Rodada {rodada}
-            </div>
-          )}
-
-          {isMestre && (
-            <button
-              onClick={iniciarOuReiniciarCombate}
-              className="bg-amber-700 hover:bg-amber-600 text-white px-3 py-1.5 rounded-lg text-xs font-bold transition-colors shadow"
-            >
-              🎲 {combateIniciado ? "Rerrolar" : "Rolar Iniciativa"}
-            </button>
-          )}
-
-          {combateIniciado && (
-            <button
-              onClick={avancarProximoTurno}
-              className="bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-1.5 rounded-lg text-xs font-bold transition-colors shadow"
-            >
-              Passar Turno ⏭️
-            </button>
-          )}
-        </div>
       </header>
 
-      {/* CORPO PRINCIPAL */}
-      <div className="flex-1 flex overflow-hidden">
-        {/* ÁREA DO GRID QUADRICULADO */}
-        <div className="flex-1 relative bg-zinc-950 flex flex-col items-center justify-center p-4 overflow-auto">
-          <div className="mb-2 flex items-center gap-3 bg-zinc-900/90 border border-zinc-800 px-4 py-1.5 rounded-full text-xs shadow-md">
+      {/* CORPO PRINCIPAL: TABULEIRO + LATERAL (DESKTOP) OU GAVETA DESLIZANTE (MOBILE) */}
+      <div className="flex-1 flex flex-col lg:flex-row overflow-hidden relative">
+        {/* ÁREA DO GRID QUADRICULADO COM PAN/SCROLL SUAVE */}
+        <div className="flex-1 relative bg-zinc-950 flex flex-col overflow-hidden">
+          {/* BANNER DE INSTRUÇÃO DO MODO ATIVO */}
+          <div className="mx-2 mt-2 flex items-center justify-between gap-2 bg-zinc-900/90 border border-zinc-800 px-3 py-1.5 rounded-xl text-[11px] sm:text-xs shadow-md shrink-0">
             {modoInteracao === "spawn" && (
-              <span className="text-emerald-400 font-bold">
-                📍 Clique em qualquer quadrado livre do tabuleiro para spawnar o personagem selecionado!
+              <span className="text-emerald-400 font-bold truncate">
+                📍 Toque em qualquer quadrado livre do grid para spawnar o personagem!
               </span>
             )}
             {modoInteracao === "prop" && abaLateral === "cenario" && (
-              <span className="text-amber-400 font-bold">
-                🗺️ Modo Editor de Cenário: Clique nos quadrados para{" "}
+              <span className="text-amber-400 font-bold truncate">
+                🗺️ Toque nos quadrados para{" "}
                 {modoBorrachaProp
                   ? "remover props (Borracha)"
                   : `posicionar ${propSelecionado?.icone} ${propSelecionado?.nome}`}
               </span>
             )}
             {modoInteracao === "acao" && acaoSelecionada && (
-              <div className="flex items-center gap-2">
-                <span className="text-red-400 font-bold">
-                  🎯 Alvo para {acaoSelecionada.icone} {acaoSelecionada.nome} (Alcance:{" "}
-                  {acaoSelecionada.alcanceMetros}m): Clique em um personagem dentro da área destacada!
+              <div className="flex items-center justify-between w-full gap-2">
+                <span className="text-red-400 font-bold truncate">
+                  🎯 Alvo de {acaoSelecionada.icone} {acaoSelecionada.nome} ({acaoSelecionada.alcanceMetros}m): Toque no alvo!
                 </span>
                 <button
                   onClick={() => {
                     setModoInteracao("mover");
                     setAcaoSelecionada(null);
                   }}
-                  className="bg-zinc-800 hover:bg-zinc-700 text-zinc-300 px-2 py-0.5 rounded text-[11px]"
+                  className="bg-zinc-800 hover:bg-zinc-700 text-zinc-200 px-2.5 py-0.5 rounded text-[11px] shrink-0"
                 >
                   Cancelar
                 </button>
               </div>
             )}
             {modoInteracao === "mover" && (
-              <span className="text-zinc-300">
+              <span className="text-zinc-300 truncate">
                 {tokenSelecionado
-                  ? `Selecionado: ${tokenSelecionado.icone} ${tokenSelecionado.nome} — Clique em um quadrado azul (${tokenSelecionado.movimentoRestante}m restantes) para mover ou escolha uma Ação ao lado.`
-                  : "Clique em um personagem no grid para selecioná-lo."}
+                  ? `${tokenSelecionado.icone} ${tokenSelecionado.nome} (${tokenSelecionado.movimentoRestante}m livres) — Toque num quadrado azul para mover.`
+                  : "Toque em um personagem no grid para selecioná-lo."}
               </span>
             )}
           </div>
 
-          <div
-            className={`relative rounded-xl border-2 border-zinc-700 shadow-[0_0_50px_rgba(0,0,0,0.85)] overflow-hidden ${temaVisual.bgGrid}`}
-            style={{
-              backgroundImage: cenarioAtual.fundoUrl
-                ? `url(${cenarioAtual.fundoUrl})`
-                : "none",
-              backgroundSize: "cover",
-              backgroundPosition: "center",
-            }}
-          >
-            {cenarioAtual.fundoUrl && (
-              <div className="absolute inset-0 bg-black/35 pointer-events-none" />
-            )}
-
+          {/* VIEWPORT ROLÁVEL DO MAPA (PERMITE ARRASTAR NO CELULAR) */}
+          <div className="flex-1 overflow-auto p-3 sm:p-6 flex items-start lg:items-center justify-start lg:justify-center custom-scrollbar">
             <div
-              className="grid relative z-10"
+              className={`relative rounded-xl border-2 border-zinc-700 shadow-[0_0_50px_rgba(0,0,0,0.85)] overflow-hidden shrink-0 ${temaVisual.bgGrid}`}
               style={{
-                gridTemplateColumns: `repeat(${cenarioAtual.largura}, minmax(46px, 54px))`,
-                gridTemplateRows: `repeat(${cenarioAtual.altura}, minmax(46px, 54px))`,
+                backgroundImage: cenarioAtual.fundoUrl
+                  ? `url(${cenarioAtual.fundoUrl})`
+                  : "none",
+                backgroundSize: "cover",
+                backgroundPosition: "center",
               }}
             >
-              {Array.from({ length: cenarioAtual.altura }).map((_, y) =>
-                Array.from({ length: cenarioAtual.largura }).map((__, x) => {
-                  const prop = propNaCelula(x, y);
-                  const tok = tokenNaCelula(x, y);
-                  const isTokenSel = tok && tok.id === tokenSelecionadoId;
-                  const isTokenVez =
-                    tok && tokenDoTurno && tok.id === tokenDoTurno.id;
-
-                  let alcançavelMovimento = false;
-                  let custoCelula = 0;
-                  if (
-                    modoInteracao === "mover" &&
-                    tokenSelecionado &&
-                    podeControlarToken(tokenSelecionado) &&
-                    !tok &&
-                    tokenSelecionado.hpAtual > 0
-                  ) {
-                    custoCelula = custoMovimentoParaCelula(
-                      tokenSelecionado.x,
-                      tokenSelecionado.y,
-                      x,
-                      y
-                    );
-                    const limiteMov = combateIniciado
-                      ? tokenSelecionado.movimentoRestante
-                      : tokenSelecionado.deslocamentoMax;
-                    alcançavelMovimento =
-                      custoCelula > 0 && custoCelula <= limiteMov;
-                  }
-
-                  let dentroAlcanceAcao = false;
-                  if (
-                    modoInteracao === "acao" &&
-                    acaoSelecionada &&
-                    tokenSelecionado
-                  ) {
-                    const dist = calcularDistanciaMetros(
-                      tokenSelecionado.x,
-                      tokenSelecionado.y,
-                      x,
-                      y
-                    );
-                    dentroAlcanceAcao = dist <= acaoSelecionada.alcanceMetros;
-                  }
-
-                  const coordLabel = `${String.fromCharCode(65 + x)}${y + 1}`;
-                  const catalogoProp = prop
-                    ? PROPS_CATALOGO.find((p) => p.tipo === prop.tipo)
-                    : null;
-
-                  return (
-                    <div
-                      key={`${x}-${y}`}
-                      onClick={() => handleCellClick(x, y)}
-                      title={
-                        tok
-                          ? `${tok.nome} (${tok.hpAtual}/${tok.hpMax} PV • CA ${tok.ca})`
-                          : prop
-                            ? `${prop.nome} (${coordLabel})`
-                            : `Célula ${coordLabel}`
-                      }
-                      className={`relative border ${temaVisual.borderColor} flex items-center justify-center cursor-pointer transition-all ${
-                        alcançavelMovimento
-                          ? "bg-sky-500/20 hover:bg-sky-400/35 border-sky-400/50"
-                          : dentroAlcanceAcao
-                            ? acaoSelecionada?.tipo === "cura"
-                              ? "bg-emerald-500/25 hover:bg-emerald-400/40 border-emerald-400/60"
-                              : "bg-red-500/25 hover:bg-red-500/40 border-red-400/60"
-                            : temaVisual.cellBg
-                      }`}
-                    >
-                      <span className="absolute top-0.5 left-1 text-[8px] text-zinc-500/60 font-mono pointer-events-none">
-                        {coordLabel}
-                      </span>
-
-                      {alcançavelMovimento && (
-                        <span className="absolute bottom-0.5 right-1 text-[8px] text-sky-300/80 font-mono pointer-events-none">
-                          {custoCelula}m
-                        </span>
-                      )}
-
-                      {prop && (
-                        <div
-                          className={`w-9 h-9 rounded-md border flex items-center justify-center text-lg shadow-inner ${
-                            catalogoProp?.cor || "bg-stone-800 border-stone-600"
-                          }`}
-                        >
-                          <span>{prop.icone}</span>
-                        </div>
-                      )}
-
-                      {tok && (
-                        <div
-                          className={`relative z-20 w-11 h-11 rounded-full flex flex-col items-center justify-center shadow-lg transition-transform ${
-                            tok.faccao === "inimigo"
-                              ? "bg-red-950 border-2 border-red-500 text-red-100"
-                              : tok.faccao === "neutro"
-                                ? "bg-amber-950 border-2 border-amber-400 text-amber-100"
-                                : "bg-emerald-950 border-2 border-emerald-400 text-emerald-100"
-                          } ${
-                            isTokenSel
-                              ? "scale-110 ring-2 ring-white shadow-[0_0_15px_rgba(255,255,255,0.6)]"
-                              : ""
-                          } ${
-                            isTokenVez
-                              ? "ring-4 ring-amber-400/80"
-                              : ""
-                          } ${tok.hpAtual <= 0 ? "grayscale opacity-60" : ""} ${
-                            tok.oculto ? "opacity-60 border-dashed" : ""
-                          }`}
-                        >
-                          <span className="text-lg leading-none">
-                            {tok.hpAtual <= 0 ? "💀" : tok.icone}
-                          </span>
-                          <span className="text-[8px] font-bold max-w-[38px] truncate leading-tight">
-                            {tok.nome.split(" ")[0]}
-                          </span>
-
-                          {/* Barra de Vida */}
-                          <div className="absolute -top-1.5 w-10 h-1.5 bg-zinc-950 rounded-full overflow-hidden border border-zinc-700">
-                            <div
-                              className={`h-full transition-all ${
-                                tok.hpAtual <= tok.hpMax * 0.3
-                                  ? "bg-red-500"
-                                  : tok.hpAtual <= tok.hpMax * 0.6
-                                    ? "bg-amber-400"
-                                    : "bg-emerald-500"
-                              }`}
-                              style={{
-                                width: `${Math.max(
-                                  0,
-                                  Math.min(100, (tok.hpAtual / tok.hpMax) * 100)
-                                )}%`,
-                              }}
-                            />
-                          </div>
-
-                          {/* Badges de Condições, Esquiva e Furtividade */}
-                          <div className="absolute -bottom-1.5 flex items-center gap-0.5">
-                            {tok.esquivando && (
-                              <span className="text-[9px] bg-sky-900 border border-sky-400 rounded-full px-0.5">
-                                🛡️
-                              </span>
-                            )}
-                            {tok.oculto && (
-                              <span className="text-[9px] bg-purple-900 border border-purple-400 rounded-full px-0.5">
-                                👻
-                              </span>
-                            )}
-                            {(tok.condicoes || []).map((cid) => {
-                              const cObj = CONDICOES_DND.find((c) => c.id === cid);
-                              return cObj ? (
-                                <span
-                                  key={cid}
-                                  title={cObj.nome}
-                                  className="text-[9px] bg-zinc-900 border border-zinc-600 rounded-full px-0.5"
-                                >
-                                  {cObj.icone}
-                                </span>
-                              ) : null;
-                            })}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })
+              {cenarioAtual.fundoUrl && (
+                <div className="absolute inset-0 bg-black/35 pointer-events-none" />
               )}
+
+              <div
+                className="grid relative z-10"
+                style={{
+                  gridTemplateColumns: `repeat(${cenarioAtual.largura}, ${tamanhoCelula}px)`,
+                  gridTemplateRows: `repeat(${cenarioAtual.altura}, ${tamanhoCelula}px)`,
+                }}
+              >
+                {Array.from({ length: cenarioAtual.altura }).map((_, y) =>
+                  Array.from({ length: cenarioAtual.largura }).map((__, x) => {
+                    const prop = propNaCelula(x, y);
+                    const tok = tokenNaCelula(x, y);
+                    const isTokenSel = tok && tok.id === tokenSelecionadoId;
+                    const isTokenVez =
+                      tok && tokenDoTurno && tok.id === tokenDoTurno.id;
+
+                    let alcançavelMovimento = false;
+                    let custoCelula = 0;
+                    if (
+                      modoInteracao === "mover" &&
+                      tokenSelecionado &&
+                      podeControlarToken(tokenSelecionado) &&
+                      !tok &&
+                      tokenSelecionado.hpAtual > 0
+                    ) {
+                      custoCelula = custoMovimentoParaCelula(
+                        tokenSelecionado.x,
+                        tokenSelecionado.y,
+                        x,
+                        y
+                      );
+                      const limiteMov = combateIniciado
+                        ? tokenSelecionado.movimentoRestante
+                        : tokenSelecionado.deslocamentoMax;
+                      alcançavelMovimento =
+                        custoCelula > 0 && custoCelula <= limiteMov;
+                    }
+
+                    let dentroAlcanceAcao = false;
+                    if (
+                      modoInteracao === "acao" &&
+                      acaoSelecionada &&
+                      tokenSelecionado
+                    ) {
+                      const dist = calcularDistanciaMetros(
+                        tokenSelecionado.x,
+                        tokenSelecionado.y,
+                        x,
+                        y
+                      );
+                      dentroAlcanceAcao = dist <= acaoSelecionada.alcanceMetros;
+                    }
+
+                    const coordLabel = `${String.fromCharCode(65 + x)}${y + 1}`;
+                    const catalogoProp = prop
+                      ? PROPS_CATALOGO.find((p) => p.tipo === prop.tipo)
+                      : null;
+
+                    return (
+                      <div
+                        key={`${x}-${y}`}
+                        onClick={() => handleCellClick(x, y)}
+                        className={`relative border ${temaVisual.borderColor} flex items-center justify-center cursor-pointer transition-all ${
+                          alcançavelMovimento
+                            ? "bg-sky-500/20 hover:bg-sky-400/35 border-sky-400/50"
+                            : dentroAlcanceAcao
+                              ? acaoSelecionada?.tipo === "cura"
+                                ? "bg-emerald-500/25 hover:bg-emerald-400/40 border-emerald-400/60"
+                                : "bg-red-500/25 hover:bg-red-500/40 border-red-400/60"
+                              : temaVisual.cellBg
+                        }`}
+                      >
+                        <span className="absolute top-0.5 left-0.5 text-[7px] text-zinc-500/60 font-mono pointer-events-none">
+                          {coordLabel}
+                        </span>
+
+                        {alcançavelMovimento && tamanhoCelula >= 38 && (
+                          <span className="absolute bottom-0.5 right-0.5 text-[7px] text-sky-300/80 font-mono pointer-events-none">
+                            {custoCelula}m
+                          </span>
+                        )}
+
+                        {prop && (
+                          <div
+                            className={`w-4/5 h-4/5 rounded-md border flex items-center justify-center text-base shadow-inner ${
+                              catalogoProp?.cor || "bg-stone-800 border-stone-600"
+                            }`}
+                          >
+                            <span>{prop.icone}</span>
+                          </div>
+                        )}
+
+                        {tok && (
+                          <div
+                            className={`relative z-20 w-[86%] h-[86%] rounded-full flex flex-col items-center justify-center shadow-lg transition-transform ${
+                              tok.faccao === "inimigo"
+                                ? "bg-red-950 border-2 border-red-500 text-red-100"
+                                : tok.faccao === "neutro"
+                                  ? "bg-amber-950 border-2 border-amber-400 text-amber-100"
+                                  : "bg-emerald-950 border-2 border-emerald-400 text-emerald-100"
+                            } ${
+                              isTokenSel
+                                ? "scale-110 ring-2 ring-white shadow-[0_0_15px_rgba(255,255,255,0.6)]"
+                                : ""
+                            } ${
+                              isTokenVez ? "ring-4 ring-amber-400/80" : ""
+                            } ${tok.hpAtual <= 0 ? "grayscale opacity-60" : ""} ${
+                              tok.oculto ? "opacity-60 border-dashed" : ""
+                            }`}
+                          >
+                            <span className="text-sm sm:text-base leading-none">
+                              {tok.hpAtual <= 0 ? "💀" : tok.icone}
+                            </span>
+                            {tamanhoCelula >= 38 && (
+                              <span className="text-[7px] font-bold max-w-[34px] truncate leading-tight">
+                                {tok.nome.split(" ")[0]}
+                              </span>
+                            )}
+
+                            <div className="absolute -top-1 w-4/5 h-1.5 bg-zinc-950 rounded-full overflow-hidden border border-zinc-700">
+                              <div
+                                className={`h-full transition-all ${
+                                  tok.hpAtual <= tok.hpMax * 0.3
+                                    ? "bg-red-500"
+                                    : tok.hpAtual <= tok.hpMax * 0.6
+                                      ? "bg-amber-400"
+                                      : "bg-emerald-500"
+                                }`}
+                                style={{
+                                  width: `${Math.max(
+                                    0,
+                                    Math.min(100, (tok.hpAtual / tok.hpMax) * 100)
+                                  )}%`,
+                                }}
+                              />
+                            </div>
+
+                            <div className="absolute -bottom-1 flex items-center gap-0.5">
+                              {tok.esquivando && (
+                                <span className="text-[8px] bg-sky-900 border border-sky-400 rounded-full px-0.5">
+                                  🛡️
+                                </span>
+                              )}
+                              {tok.oculto && (
+                                <span className="text-[8px] bg-purple-900 border border-purple-400 rounded-full px-0.5">
+                                  👻
+                                </span>
+                              )}
+                              {(tok.condicoes || []).slice(0, 2).map((cid) => {
+                                const cObj = CONDICOES_DND.find((c) => c.id === cid);
+                                return cObj ? (
+                                  <span
+                                    key={cid}
+                                    className="text-[8px] bg-zinc-900 border border-zinc-600 rounded-full px-0.5"
+                                  >
+                                    {cObj.icone}
+                                  </span>
+                                ) : null;
+                              })}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })
+                )}
+              </div>
             </div>
           </div>
         </div>
 
-        {/* BARRA LATERAL TÁTICA */}
-        <aside className="w-96 bg-zinc-900 border-l border-zinc-800 flex flex-col shrink-0">
-          <div className="grid grid-cols-3 border-b border-zinc-800 bg-zinc-950/60">
+        {/* PAINEL TÁTICO LATERAL (NO DESKTOP SEMPRE VISÍVEL; NO MOBILE É UMA GAVETA DESLIZANTE) */}
+        <aside
+          className={`bg-zinc-900 border-t lg:border-t-0 lg:border-l border-zinc-800 flex flex-col shrink-0 transition-all z-30 ${
+            gavetaMobileAberta
+              ? "fixed inset-x-0 bottom-12 max-h-[65dvh] rounded-t-2xl shadow-[0_-10px_40px_rgba(0,0,0,0.9)] lg:static lg:max-h-none lg:rounded-none lg:w-96"
+              : "hidden lg:flex lg:w-96"
+          }`}
+        >
+          {/* Cabeçalho da Gaveta no Mobile */}
+          <div className="flex lg:hidden items-center justify-between px-4 py-2 border-b border-zinc-800 bg-zinc-950 rounded-t-2xl">
+            <span className="text-xs font-bold uppercase text-amber-400">
+              {abaLateral === "combate" && "⚔️ Ações do Personagem"}
+              {abaLateral === "spawn" && "🧙‍♂️ Fichas & Spawn"}
+              {abaLateral === "cenario" && "🗺️ Editor de Cenário"}
+              {abaLateral === "logs" && "🎲 Registro de Combate"}
+            </span>
+            <button
+              onClick={() => setGavetaMobileAberta(false)}
+              className="text-zinc-400 hover:text-white text-xs font-bold px-2 py-1 bg-zinc-800 rounded"
+            >
+              ▼ Fechar Painel
+            </button>
+          </div>
+
+          {/* Abas visíveis no Desktop */}
+          <div className="hidden lg:grid grid-cols-3 border-b border-zinc-800 bg-zinc-950/60">
             <button
               onClick={() => {
                 setAbaLateral("combate");
@@ -1661,7 +1703,7 @@ export function TabuleiroBatalha({
             </button>
           </div>
 
-          <div className="flex-1 overflow-y-auto p-4 space-y-4">
+          <div className="flex-1 overflow-y-auto p-3.5 sm:p-4 space-y-4 custom-scrollbar">
             {abaLateral === "combate" && (
               <>
                 {!tokenSelecionado ? (
@@ -1703,11 +1745,6 @@ export function TabuleiroBatalha({
                           {isMestre && (
                             <button
                               onClick={alternarVisibilidadeToken}
-                              title={
-                                tokenSelecionado.oculto
-                                  ? "Revelar para os Jogadores"
-                                  : "Ocultar dos Jogadores (Furtividade)"
-                              }
                               className={`px-2 py-1 rounded text-[11px] border ${
                                 tokenSelecionado.oculto
                                   ? "bg-purple-900 border-purple-400 text-purple-100"
@@ -1778,7 +1815,6 @@ export function TabuleiroBatalha({
                         </div>
                       </div>
 
-                      {/* CONDIÇÕES DE STATUS D&D 5e */}
                       <div>
                         <span className="block text-[9px] text-zinc-500 uppercase font-bold mb-1">
                           Condições de Status D&D 5e:
@@ -1792,11 +1828,10 @@ export function TabuleiroBatalha({
                               <button
                                 key={c.id}
                                 onClick={() => void alternarCondicaoToken(c.id)}
-                                title={c.desc}
-                                className={`px-2 py-0.5 rounded text-[10px] font-semibold border transition-colors ${
+                                className={`px-2 py-1 rounded text-[10px] font-semibold border transition-colors ${
                                   ativa
                                     ? "bg-purple-900/80 border-purple-400 text-white"
-                                    : "bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-zinc-200"
+                                    : "bg-zinc-900 border-zinc-800 text-zinc-400"
                                 }`}
                               >
                                 {c.icone} {c.nome}
@@ -1805,29 +1840,6 @@ export function TabuleiroBatalha({
                           })}
                         </div>
                       </div>
-
-                      {combateIniciado && (
-                        <div className="flex items-center justify-between bg-zinc-900/70 px-3 py-1.5 rounded-lg border border-zinc-800 text-[11px]">
-                          <span
-                            className={
-                              tokenSelecionado.acaoDisponivel
-                                ? "text-emerald-400 font-bold"
-                                : "text-zinc-600 line-through"
-                            }
-                          >
-                            ● Ação Principal
-                          </span>
-                          <span
-                            className={
-                              tokenSelecionado.acaoBonusDisponivel
-                                ? "text-amber-400 font-bold"
-                                : "text-zinc-600 line-through"
-                            }
-                          >
-                            ● Ação Bônus
-                          </span>
-                        </div>
-                      )}
                     </div>
 
                     {!podeControlarToken(tokenSelecionado) ? (
@@ -1837,7 +1849,7 @@ export function TabuleiroBatalha({
                     ) : (
                       <>
                         <div>
-                          <label className="block text-[10px] text-zinc-400 uppercase font-bold mb-1.5 tracking-wider">
+                          <label className="block text-[10px] text-zinc-400 uppercase font-bold mb-1.5">
                             Modo de Rolagem (1d20)
                           </label>
                           <div className="grid grid-cols-3 gap-1.5 bg-zinc-950 p-1 rounded-lg border border-zinc-800">
@@ -1849,14 +1861,14 @@ export function TabuleiroBatalha({
                               <button
                                 key={m.id}
                                 onClick={() => setModoRolagemD20(m.id)}
-                                className={`py-1 rounded text-[11px] font-bold transition-colors ${
+                                className={`py-1.5 rounded text-[11px] font-bold transition-colors ${
                                   modoRolagemD20 === m.id
                                     ? m.id === "vantagem"
                                       ? "bg-emerald-700 text-white"
                                       : m.id === "desvantagem"
                                         ? "bg-red-800 text-white"
                                         : "bg-zinc-700 text-white"
-                                    : "text-zinc-400 hover:text-white"
+                                    : "text-zinc-400"
                                 }`}
                               >
                                 {m.label}
@@ -1876,7 +1888,7 @@ export function TabuleiroBatalha({
                             </p>
                             <button
                               onClick={rolarSalvaguardaMorte}
-                              className="w-full bg-red-700 hover:bg-red-600 text-white font-bold py-2 rounded-lg text-xs shadow"
+                              className="w-full bg-red-700 hover:bg-red-600 text-white font-bold py-2.5 rounded-lg text-xs shadow"
                             >
                               🎲 Rolar Salvaguarda Contra a Morte (1d20)
                             </button>
@@ -1884,8 +1896,8 @@ export function TabuleiroBatalha({
                         ) : (
                           <>
                             <div className="space-y-2">
-                              <h4 className="text-[11px] font-bold uppercase text-zinc-400 tracking-wider">
-                                ⚔️ Ataques, Magias & Curas da Ficha
+                              <h4 className="text-[11px] font-bold uppercase text-zinc-400">
+                                ⚔️ Ataques, Magias & Curas (Toque e depois escolha o Alvo no Mapa)
                               </h4>
                               {acoesDisponiveis.map((acao) => {
                                 const ativa = acaoSelecionada?.id === acao.id;
@@ -1899,6 +1911,7 @@ export function TabuleiroBatalha({
                                       } else {
                                         setAcaoSelecionada(acao);
                                         setModoInteracao("acao");
+                                        setGavetaMobileAberta(false);
                                       }
                                     }}
                                     className={`w-full text-left p-2.5 rounded-xl border transition-all flex items-center justify-between gap-2 ${
@@ -1915,7 +1928,7 @@ export function TabuleiroBatalha({
                                         <span className="font-bold text-xs text-white truncate">
                                           {acao.nome}
                                         </span>
-                                        <span className="text-[10px] px-1.5 py-0.2 rounded bg-zinc-800 text-zinc-300 font-mono">
+                                        <span className="text-[10px] px-1.5 rounded bg-zinc-800 text-zinc-300 font-mono">
                                           {acao.alcanceMetros}m
                                         </span>
                                       </div>
@@ -1955,19 +1968,16 @@ export function TabuleiroBatalha({
                             </div>
 
                             <div className="pt-2 border-t border-zinc-800">
-                              <h4 className="text-[10px] font-bold uppercase text-zinc-500 mb-2 tracking-wider">
-                                Manobras Táticas de Combate
-                              </h4>
                               <div className="grid grid-cols-2 gap-2">
                                 <button
                                   onClick={usarDisparada}
-                                  className="bg-zinc-950 hover:bg-zinc-800 border border-zinc-800 text-sky-300 py-2 px-3 rounded-lg text-xs font-bold transition-colors"
+                                  className="bg-zinc-950 hover:bg-zinc-800 border border-zinc-800 text-sky-300 py-2 px-3 rounded-lg text-xs font-bold"
                                 >
                                   🏃 Disparada (+Mov)
                                 </button>
                                 <button
                                   onClick={usarEsquivar}
-                                  className="bg-zinc-950 hover:bg-zinc-800 border border-zinc-800 text-amber-300 py-2 px-3 rounded-lg text-xs font-bold transition-colors"
+                                  className="bg-zinc-950 hover:bg-zinc-800 border border-zinc-800 text-amber-300 py-2 px-3 rounded-lg text-xs font-bold"
                                 >
                                   🛡️ Esquivar (Dodge)
                                 </button>
@@ -1985,23 +1995,20 @@ export function TabuleiroBatalha({
             {abaLateral === "spawn" && (
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
-                  <h4 className="text-xs font-bold uppercase text-emerald-400 tracking-wider">
-                    🧙‍♂️ Fichas da Campanha ({fichasMesa.length})
+                  <h4 className="text-xs font-bold uppercase text-emerald-400">
+                    🧙‍♂️ Fichas ({fichasMesa.length})
                   </h4>
                   <button
                     onClick={gerarFichasPadroesNaMesa}
                     disabled={carregandoFichas}
-                    className="bg-emerald-700 hover:bg-emerald-600 text-white text-[11px] font-bold px-2.5 py-1 rounded-lg transition-colors shadow"
+                    className="bg-emerald-700 hover:bg-emerald-600 text-white text-[11px] font-bold px-2.5 py-1.5 rounded-lg shadow"
                   >
-                    {carregandoFichas ? "Gerando..." : "⚡ Gerar Fichas Padrões D&D"}
+                    {carregandoFichas ? "Gerando..." : "⚡ Fichas Padrões D&D"}
                   </button>
                 </div>
 
                 {isMestre && (
                   <div className="bg-zinc-950 border border-zinc-800 rounded-xl p-3 space-y-3">
-                    <label className="block text-[10px] text-zinc-400 uppercase font-bold">
-                      Facção ao Spawnar no Tabuleiro
-                    </label>
                     <div className="grid grid-cols-3 gap-1.5">
                       {[
                         { id: "heroi", label: "🛡️ Herói", cor: "bg-emerald-700" },
@@ -2011,7 +2018,7 @@ export function TabuleiroBatalha({
                         <button
                           key={f.id}
                           onClick={() => setFaccaoSpawn(f.id)}
-                          className={`py-1.5 rounded text-xs font-bold transition-colors ${
+                          className={`py-1.5 rounded text-xs font-bold ${
                             faccaoSpawn === f.id
                               ? `${f.cor} text-white`
                               : "bg-zinc-900 text-zinc-400 border border-zinc-800"
@@ -2022,7 +2029,7 @@ export function TabuleiroBatalha({
                       ))}
                     </div>
 
-                    <label className="flex items-center gap-2 text-xs text-purple-300 cursor-pointer pt-1">
+                    <label className="flex items-center gap-2 text-xs text-purple-300 cursor-pointer">
                       <input
                         type="checkbox"
                         checked={spawnOculto}
@@ -2031,81 +2038,64 @@ export function TabuleiroBatalha({
                       />
                       👻 Spawnar Oculto dos Jogadores (Emboscada)
                     </label>
-
-                    <p className="text-[11px] text-zinc-400">
-                      Selecione uma ficha abaixo e depois <strong>clique em qualquer quadrado do grid</strong> para spawnar o personagem!
-                    </p>
                   </div>
                 )}
 
                 <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
-                  {fichasMesa.length === 0 ? (
-                    <div className="text-center py-6 bg-zinc-950 rounded-xl border border-zinc-800 p-4">
-                      <p className="text-xs text-zinc-500 mb-3">
-                        Nenhuma ficha encontrada nesta mesa ainda.
-                      </p>
-                      <button
-                        onClick={gerarFichasPadroesNaMesa}
-                        className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold px-4 py-2 rounded-lg"
+                  {fichasMesa.map((f) => {
+                    const selecionada = String(f.id) === String(fichaParaSpawnId);
+                    const isMonstro =
+                      (f.classe || "").toLowerCase().includes("inimigo") ||
+                      (f.classe || "").toLowerCase().includes("chefe") ||
+                      (f.antecedente || "").toLowerCase().includes("monstro");
+                    return (
+                      <div
+                        key={f.id}
+                        onClick={() => {
+                          setFichaParaSpawnId(String(f.id));
+                          setFaccaoSpawn(isMonstro ? "inimigo" : "heroi");
+                          if (isMestre) {
+                            setModoInteracao("spawn");
+                            setGavetaMobileAberta(false);
+                          }
+                        }}
+                        className={`p-2.5 rounded-xl border cursor-pointer transition-all flex items-center justify-between ${
+                          selecionada
+                            ? "bg-emerald-950/60 border-emerald-500 text-white"
+                            : "bg-zinc-950 border-zinc-800 text-zinc-300"
+                        }`}
                       >
-                        ⚡ Carregar 8 Fichas Padrões D&D 5e
-                      </button>
-                    </div>
-                  ) : (
-                    fichasMesa.map((f) => {
-                      const selecionada = String(f.id) === String(fichaParaSpawnId);
-                      const isMonstro =
-                        (f.classe || "").toLowerCase().includes("inimigo") ||
-                        (f.classe || "").toLowerCase().includes("chefe") ||
-                        (f.antecedente || "").toLowerCase().includes("monstro");
-                      return (
-                        <div
-                          key={f.id}
-                          onClick={() => {
-                            setFichaParaSpawnId(String(f.id));
-                            setFaccaoSpawn(isMonstro ? "inimigo" : "heroi");
-                            if (isMestre) setModoInteracao("spawn");
-                          }}
-                          className={`p-2.5 rounded-xl border cursor-pointer transition-all flex items-center justify-between ${
-                            selecionada
-                              ? "bg-emerald-950/60 border-emerald-500 text-white"
-                              : "bg-zinc-950 border-zinc-800 hover:border-zinc-700 text-zinc-300"
-                          }`}
-                        >
-                          <div className="min-w-0">
-                            <div className="flex items-center gap-1.5">
-                              <span>
-                                {obterIconeFicha(f, isMonstro ? "inimigo" : "heroi")}
-                              </span>
-                              <span className="font-bold text-xs truncate">
-                                {f.nome}
-                              </span>
-                            </div>
-                            <span className="text-[10px] text-zinc-400 block">
-                              {f.raca} • {f.classe} (PV {f.pontosDeVidaMaximos} | CA{" "}
-                              {f.classeArmadura})
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-1.5">
+                            <span>
+                              {obterIconeFicha(f, isMonstro ? "inimigo" : "heroi")}
+                            </span>
+                            <span className="font-bold text-xs truncate">
+                              {f.nome}
                             </span>
                           </div>
-
-                          <div className="flex items-center gap-1 shrink-0">
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setFichaModalDados({
-                                  id: typeof f.id === "number" ? f.id : null,
-                                  objeto: f,
-                                });
-                                setFichaModalAberta(true);
-                              }}
-                              className="bg-zinc-800 hover:bg-zinc-700 text-zinc-300 px-2 py-1 rounded text-[10px]"
-                            >
-                              📜 Ver
-                            </button>
-                          </div>
+                          <span className="text-[10px] text-zinc-400 block">
+                            {f.raca} • {f.classe} (PV {f.pontosDeVidaMaximos} | CA{" "}
+                            {f.classeArmadura})
+                          </span>
                         </div>
-                      );
-                    })
-                  )}
+
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setFichaModalDados({
+                              id: typeof f.id === "number" ? f.id : null,
+                              objeto: f,
+                            });
+                            setFichaModalAberta(true);
+                          }}
+                          className="bg-zinc-800 hover:bg-zinc-700 text-zinc-300 px-2 py-1 rounded text-[10px]"
+                        >
+                          📜 Ver
+                        </button>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             )}
@@ -2118,8 +2108,23 @@ export function TabuleiroBatalha({
                   </p>
                 ) : (
                   <>
+                    <div className="grid grid-cols-2 gap-2 md:hidden">
+                      <button
+                        onClick={realizarDescansoCurto}
+                        className="bg-zinc-800 border border-zinc-700 text-zinc-200 py-2 rounded-lg text-xs font-bold"
+                      >
+                        ⛺ Descanso Curto
+                      </button>
+                      <button
+                        onClick={realizarDescansoLongo}
+                        className="bg-indigo-950 border border-indigo-700 text-indigo-200 py-2 rounded-lg text-xs font-bold"
+                      >
+                        🌙 Descanso Longo
+                      </button>
+                    </div>
+
                     <div className="bg-zinc-950 border border-zinc-800 rounded-xl p-3 space-y-2.5">
-                      <h4 className="text-[11px] font-bold uppercase text-amber-400 tracking-wider">
+                      <h4 className="text-[11px] font-bold uppercase text-amber-400">
                         🗺️ Trocar Cenário Instantaneamente
                       </h4>
                       <div className="grid grid-cols-1 gap-1.5 max-h-36 overflow-y-auto pr-1">
@@ -2127,10 +2132,10 @@ export function TabuleiroBatalha({
                           <button
                             key={cen.id}
                             onClick={() => aplicarCenario(cen)}
-                            className={`text-left px-2.5 py-1.5 rounded-lg border text-xs flex justify-between items-center transition-colors ${
+                            className={`text-left px-2.5 py-1.5 rounded-lg border text-xs flex justify-between items-center ${
                               cenarioAtual.nome === cen.nome
                                 ? "bg-amber-950/70 border-amber-500 text-amber-200 font-bold"
-                                : "bg-zinc-900 hover:bg-zinc-800 border-zinc-800 text-zinc-300"
+                                : "bg-zinc-900 border-zinc-800 text-zinc-300"
                             }`}
                           >
                             <span className="truncate">{cen.nome}</span>
@@ -2139,59 +2144,6 @@ export function TabuleiroBatalha({
                             </span>
                           </button>
                         ))}
-                      </div>
-                    </div>
-
-                    <div className="bg-zinc-950 border border-zinc-800 rounded-xl p-3 space-y-2.5">
-                      <h4 className="text-[11px] font-bold uppercase text-zinc-400">
-                        Tema & Imagem de Fundo
-                      </h4>
-                      <div className="grid grid-cols-2 gap-2">
-                        <select
-                          value={cenarioAtual.tema}
-                          onChange={(e) => {
-                            const atualizado = {
-                              ...cenarioAtual,
-                              tema: e.target.value,
-                            };
-                            setCenarioAtual(atualizado);
-                            void transmitirEstadoGeral({ cenarioAtual: atualizado });
-                          }}
-                          className="bg-zinc-900 border border-zinc-700 rounded-lg px-2 py-1.5 text-xs text-white"
-                        >
-                          {Object.entries(TEMAS_TABULEIRO).map(([k, v]) => (
-                            <option key={k} value={k}>
-                              {v.nome}
-                            </option>
-                          ))}
-                        </select>
-
-                        <select
-                          value={cenarioAtual.fundoUrl || ""}
-                          onChange={(e) => {
-                            const atualizado = {
-                              ...cenarioAtual,
-                              fundoUrl: e.target.value,
-                            };
-                            setCenarioAtual(atualizado);
-                            void transmitirEstadoGeral({ cenarioAtual: atualizado });
-                          }}
-                          className="bg-zinc-900 border border-zinc-700 rounded-lg px-2 py-1.5 text-xs text-white"
-                        >
-                          <option value="">Sem Imagem (Tema Puro)</option>
-                          {cenaStorytelling && (
-                            <option value={cenaStorytelling}>
-                              Cena Atual do Storytelling
-                            </option>
-                          )}
-                          {midias
-                            .filter((m) => m.tipo === 0)
-                            .map((m) => (
-                              <option key={m.id} value={m.caminhoServidor}>
-                                {m.nomeArquivo}
-                              </option>
-                            ))}
-                        </select>
                       </div>
                     </div>
 
@@ -2220,9 +2172,9 @@ export function TabuleiroBatalha({
                               setCenarioAtual(limpo);
                               void transmitirEstadoGeral({ cenarioAtual: limpo });
                             }}
-                            className="px-2 py-0.5 rounded text-[10px] bg-zinc-900 hover:bg-red-950 text-zinc-400 hover:text-red-300 border border-zinc-800"
+                            className="px-2 py-0.5 rounded text-[10px] bg-zinc-900 text-zinc-400 border border-zinc-800"
                           >
-                            Limpar Tudo
+                            Limpar
                           </button>
                         </div>
                       </div>
@@ -2239,25 +2191,16 @@ export function TabuleiroBatalha({
                                 setModoBorrachaProp(false);
                                 setModoInteracao("prop");
                               }}
-                              className={`p-2 rounded-lg border text-left transition-all flex items-center gap-2 ${
+                              className={`p-2 rounded-lg border text-left flex items-center gap-2 ${
                                 ativo
                                   ? "bg-amber-950/70 border-amber-400 text-white"
-                                  : "bg-zinc-900 border-zinc-800 text-zinc-300 hover:border-zinc-700"
+                                  : "bg-zinc-900 border-zinc-800 text-zinc-300"
                               }`}
                             >
                               <span className="text-base">{p.icone}</span>
-                              <div className="min-w-0">
-                                <span className="block text-[11px] font-bold truncate">
-                                  {p.nome}
-                                </span>
-                                <span className="block text-[9px] text-zinc-500">
-                                  {p.bloqueiaMovimento
-                                    ? "Bloqueia"
-                                    : p.terrenoDificil
-                                      ? "Terreno Difícil"
-                                      : "Interativo"}
-                                </span>
-                              </div>
+                              <span className="text-[11px] font-bold truncate">
+                                {p.nome}
+                              </span>
                             </button>
                           );
                         })}
@@ -2270,11 +2213,11 @@ export function TabuleiroBatalha({
                         value={nomeNovoCenario}
                         onChange={(e) => setNomeNovoCenario(e.target.value)}
                         placeholder={`Salvar como (ex: ${cenarioAtual.nome})`}
-                        className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-2.5 py-1.5 text-xs text-white outline-none focus:border-amber-500"
+                        className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-2.5 py-1.5 text-xs text-white"
                       />
                       <button
                         onClick={salvarCenarioAtual}
-                        className="w-full bg-amber-600 hover:bg-amber-500 text-white font-bold py-2 rounded-lg text-xs transition-colors shadow"
+                        className="w-full bg-amber-600 hover:bg-amber-500 text-white font-bold py-2 rounded-lg text-xs"
                       >
                         💾 Salvar Cenário Atual
                       </button>
@@ -2283,33 +2226,41 @@ export function TabuleiroBatalha({
                 )}
               </div>
             )}
+
+            {/* ABA DE LOGS NO MOBILE */}
+            {abaLateral === "logs" && (
+              <div className="space-y-2 font-mono text-xs">
+                {logsCombate.map((log) => (
+                  <div
+                    key={log.id}
+                    className={`p-2 rounded border ${
+                      log.tipo === "ataque"
+                        ? "bg-red-950/30 border-red-900/50 text-red-200"
+                        : log.tipo === "cura"
+                          ? "bg-emerald-950/30 border-emerald-900/50 text-emerald-200"
+                          : "bg-zinc-950 border-zinc-800 text-amber-200/90"
+                    }`}
+                  >
+                    {log.horario && (
+                      <span className="text-[9px] text-zinc-500 mr-1.5">
+                        [{log.horario}]
+                      </span>
+                    )}
+                    <span>{log.texto}</span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
-          {/* REGISTRO DE ROLAGENS E COMBATE */}
-          <div className="h-52 border-t border-zinc-800 bg-zinc-950 flex flex-col">
+          {/* REGISTRO DE COMBATE FIXO NO RODAPÉ DO DESKTOP */}
+          <div className="hidden lg:flex h-52 border-t border-zinc-800 bg-zinc-950 flex-col">
             <div className="px-3 py-1.5 border-b border-zinc-800 flex justify-between items-center">
               <span className="text-[10px] font-bold uppercase tracking-widest text-zinc-400">
                 🎲 Registro de Combate D&D
               </span>
-              {isMestre && (
-                <button
-                  onClick={() =>
-                    setLogsCombate([
-                      {
-                        id: String(Date.now()),
-                        tipo: "sistema",
-                        texto: "Registro limpo pelo Mestre.",
-                        horario: "",
-                      },
-                    ])
-                  }
-                  className="text-[10px] text-zinc-500 hover:text-zinc-300"
-                >
-                  Limpar
-                </button>
-              )}
             </div>
-            <div className="flex-1 overflow-y-auto p-2.5 space-y-1.5 font-mono text-[11px]">
+            <div className="flex-1 overflow-y-auto p-2.5 space-y-1.5 font-mono text-[11px] custom-scrollbar">
               {logsCombate.map((log) => (
                 <div
                   key={log.id}
@@ -2334,6 +2285,63 @@ export function TabuleiroBatalha({
             </div>
           </div>
         </aside>
+
+        {/* BARRA DE NAVEGAÇÃO INFERIOR EXCLUSIVA PARA MOBILE */}
+        <nav className="grid lg:hidden grid-cols-5 bg-zinc-900 border-t border-zinc-800 h-12 shrink-0 z-40">
+          <button
+            onClick={() => selecionarAbaMobile("mapa")}
+            className={`flex flex-col items-center justify-center text-[10px] font-bold ${
+              !gavetaMobileAberta ? "text-red-400 bg-zinc-950" : "text-zinc-400"
+            }`}
+          >
+            <span>🗺️</span>
+            <span>Mapa</span>
+          </button>
+          <button
+            onClick={() => selecionarAbaMobile("combate")}
+            className={`flex flex-col items-center justify-center text-[10px] font-bold ${
+              gavetaMobileAberta && abaLateral === "combate"
+                ? "text-red-400 bg-zinc-950"
+                : "text-zinc-400"
+            }`}
+          >
+            <span>⚔️</span>
+            <span>Ações</span>
+          </button>
+          <button
+            onClick={() => selecionarAbaMobile("spawn")}
+            className={`flex flex-col items-center justify-center text-[10px] font-bold ${
+              gavetaMobileAberta && abaLateral === "spawn"
+                ? "text-emerald-400 bg-zinc-950"
+                : "text-zinc-400"
+            }`}
+          >
+            <span>🧙‍♂️</span>
+            <span>Spawn</span>
+          </button>
+          <button
+            onClick={() => selecionarAbaMobile("cenario")}
+            className={`flex flex-col items-center justify-center text-[10px] font-bold ${
+              gavetaMobileAberta && abaLateral === "cenario"
+                ? "text-amber-400 bg-zinc-950"
+                : "text-zinc-400"
+            }`}
+          >
+            <span>🧱</span>
+            <span>Cenário</span>
+          </button>
+          <button
+            onClick={() => selecionarAbaMobile("logs")}
+            className={`flex flex-col items-center justify-center text-[10px] font-bold ${
+              gavetaMobileAberta && abaLateral === "logs"
+                ? "text-purple-400 bg-zinc-950"
+                : "text-zinc-400"
+            }`}
+          >
+            <span>🎲</span>
+            <span>Log</span>
+          </button>
+        </nav>
       </div>
     </div>
   );

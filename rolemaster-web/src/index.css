@@ -1,6 +1,28 @@
 @import "tailwindcss";
 
-/* Já deixamos um fundo escuro e texto claro pro nosso RPG */
+/* Configuração base responsiva e amigável para dispositivos móveis e desktop */
+html,
 body {
-  @apply bg-zinc-900 text-zinc-100;
+  @apply bg-zinc-950 text-zinc-100 antialiased selection:bg-red-700 selection:text-white;
+  overscroll-behavior-y: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Scrollbar customizada discreta */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: rgba(24, 24, 27, 0.6);
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(82, 82, 91, 0.8);
+  border-radius: 9999px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(220, 38, 38, 0.8);
 }

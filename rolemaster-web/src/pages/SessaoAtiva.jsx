@@ -48,6 +48,7 @@ export function SessaoAtiva() {
 
   // === ROLADOR DE DADOS E TESTES DE PERÍCIA NO STORYTELLING ===
   const [roladorAberto, setRoladorAberto] = useState(false);
+  const [painelMestreAberto, setPainelMestreAberto] = useState(true);
   const [fichasDisponiveis, setFichasDisponiveis] = useState([]);
   const [fichaAtivaId, setFichaAtivaId] = useState("");
   const [modoD20Story, setModoD20Story] = useState("normal");
@@ -464,7 +465,7 @@ export function SessaoAtiva() {
   };
 
   return (
-    <div className="w-screen h-screen bg-black overflow-hidden relative flex flex-col">
+    <div className="w-screen h-[100dvh] bg-black overflow-hidden relative flex flex-col">
       <audio ref={audioRef} loop />
 
       {modoBatalha ? (
@@ -489,43 +490,45 @@ export function SessaoAtiva() {
 
           <div className="absolute inset-0 bg-black/40 pointer-events-none" />
 
-          {/* Barra superior de atalhos rápidos */}
-          <div className="absolute top-4 left-4 right-4 z-50 flex justify-between items-center pointer-events-none">
+          {/* Barra superior de atalhos rápidos adaptada para Mobile e Desktop */}
+          <div className="absolute top-3 left-3 right-3 sm:top-4 sm:left-4 sm:right-4 z-50 flex flex-wrap justify-between items-center gap-2 pointer-events-none">
             <button
               onClick={() => navigate("/campanha")}
-              className="pointer-events-auto bg-black/60 hover:bg-red-900/80 text-white px-4 py-2 rounded-lg backdrop-blur-sm border border-zinc-700 transition-colors text-sm font-semibold"
+              className="pointer-events-auto bg-black/75 hover:bg-red-900/80 text-white px-3 py-2 sm:px-4 rounded-lg backdrop-blur-sm border border-zinc-700 transition-colors text-xs sm:text-sm font-semibold"
             >
-              ⇦ Retornar à Campanha
+              ⇦ <span className="hidden sm:inline">Retornar à</span> Campanha
             </button>
 
-            <div className="flex items-center gap-3 pointer-events-auto">
+            <div className="flex items-center gap-2 sm:gap-3 pointer-events-auto">
               <button
                 onClick={() => setRoladorAberto(!roladorAberto)}
-                className={`px-4 py-2 rounded-lg backdrop-blur-sm border text-sm font-bold transition-all flex items-center gap-2 ${
+                className={`px-3 py-2 sm:px-4 rounded-lg backdrop-blur-sm border text-xs sm:text-sm font-bold transition-all flex items-center gap-1.5 ${
                   roladorAberto
                     ? "bg-amber-600 border-amber-400 text-white shadow-lg"
-                    : "bg-zinc-900/80 hover:bg-zinc-800 border-zinc-700 text-amber-400"
+                    : "bg-zinc-900/85 hover:bg-zinc-800 border-zinc-700 text-amber-400"
                 }`}
               >
-                🎲 Dados & Testes de Perícia
+                🎲 <span className="hidden sm:inline">Dados & Perícias</span>
+                <span className="sm:hidden">Dados</span>
               </button>
 
               <button
                 onClick={() => void invocarMomentoDeBatalha(false)}
-                className="bg-red-700/90 hover:bg-red-600 text-white px-5 py-2 rounded-lg backdrop-blur-sm border border-red-500 transition-all text-sm font-bold shadow-lg shadow-red-950/50 flex items-center gap-2"
+                className="bg-red-700/95 hover:bg-red-600 text-white px-3.5 py-2 sm:px-5 rounded-lg backdrop-blur-sm border border-red-500 transition-all text-xs sm:text-sm font-bold shadow-lg shadow-red-950/50 flex items-center gap-1.5"
               >
-                ⚔️ Abrir Tabuleiro de Batalha
+                ⚔️ <span className="hidden sm:inline">Abrir Tabuleiro de</span>{" "}
+                Batalha
               </button>
             </div>
           </div>
 
           {/* FEED DE ROLAGENS EM TEMPO REAL NO CANTO SUPERIOR ESQUERDO */}
           {rolagensStory.length > 0 && (
-            <div className="absolute top-16 left-4 z-40 w-80 space-y-2 pointer-events-none">
-              {rolagensStory.slice(0, 4).map((r) => (
+            <div className="absolute top-14 sm:top-16 left-3 sm:left-4 z-40 w-64 sm:w-80 space-y-1.5 sm:space-y-2 pointer-events-none">
+              {rolagensStory.slice(0, 3).map((r) => (
                 <div
                   key={r.id}
-                  className={`p-3 rounded-xl backdrop-blur-md border shadow-xl flex justify-between items-center ${
+                  className={`p-2.5 sm:p-3 rounded-xl backdrop-blur-md border shadow-xl flex justify-between items-center ${
                     r.critico
                       ? "bg-emerald-950/90 border-emerald-400 text-emerald-100"
                       : r.falha
@@ -545,7 +548,7 @@ export function SessaoAtiva() {
                     </span>
                   </div>
                   <div className="text-right shrink-0">
-                    <span className="text-2xl font-extrabold font-mono">
+                    <span className="text-xl sm:text-2xl font-extrabold font-mono">
                       {r.total}
                     </span>
                     {r.critico && (
@@ -566,14 +569,14 @@ export function SessaoAtiva() {
 
           {/* PAINEL FLUTUANTE DE ROLAGEM DE DADOS E PERÍCIAS NO STORYTELLING */}
           {roladorAberto && (
-            <div className="absolute top-16 right-4 z-50 w-96 bg-zinc-950/95 backdrop-blur-md border border-zinc-700 rounded-2xl p-4 shadow-2xl space-y-4">
+            <div className="absolute top-14 sm:top-16 left-3 right-3 sm:left-auto sm:right-4 z-50 sm:w-96 max-h-[75dvh] overflow-y-auto custom-scrollbar bg-zinc-950/95 backdrop-blur-md border border-zinc-700 rounded-2xl p-3.5 sm:p-4 shadow-2xl space-y-3.5">
               <div className="flex justify-between items-center border-b border-zinc-800 pb-2">
                 <h4 className="text-xs font-bold uppercase tracking-wider text-amber-400">
                   🎲 Rolador de Dados & Testes D&D 5e
                 </h4>
                 <button
                   onClick={() => setRoladorAberto(false)}
-                  className="text-zinc-500 hover:text-white text-sm font-bold"
+                  className="text-zinc-400 hover:text-white text-sm font-bold px-2 py-0.5 rounded bg-zinc-900"
                 >
                   ✕
                 </button>
@@ -588,7 +591,7 @@ export function SessaoAtiva() {
                   <select
                     value={fichaAtivaId}
                     onChange={(e) => setFichaAtivaId(e.target.value)}
-                    className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-2.5 py-1.5 text-xs text-white"
+                    className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-2.5 py-2 text-xs text-white"
                   >
                     {fichasDisponiveis.map((f) => (
                       <option key={f.id} value={f.id}>
@@ -605,7 +608,7 @@ export function SessaoAtiva() {
                   <button
                     key={m}
                     onClick={() => setModoD20Story(m)}
-                    className={`py-1 rounded text-[10px] font-bold uppercase ${
+                    className={`py-1.5 rounded text-[10px] font-bold uppercase ${
                       modoD20Story === m
                         ? "bg-amber-600 text-white"
                         : "text-zinc-400 hover:text-white"
@@ -626,7 +629,7 @@ export function SessaoAtiva() {
                     <button
                       key={faces}
                       onClick={() => void rolarDadoLivreStory(faces)}
-                      className="bg-zinc-900 hover:bg-amber-700 border border-zinc-700 hover:border-amber-400 text-white py-2 rounded-lg text-xs font-bold font-mono transition-colors"
+                      className="bg-zinc-900 hover:bg-amber-700 active:bg-amber-600 border border-zinc-700 hover:border-amber-400 text-white py-2.5 rounded-lg text-xs font-bold font-mono transition-colors"
                     >
                       d{faces}
                     </button>
@@ -639,7 +642,7 @@ export function SessaoAtiva() {
                 <span className="block text-[10px] text-zinc-400 uppercase font-bold mb-1.5">
                   Testes de Perícia (1d20 + Bônus):
                 </span>
-                <div className="grid grid-cols-2 gap-1.5 max-h-48 overflow-y-auto pr-1">
+                <div className="grid grid-cols-2 gap-1.5 max-h-48 overflow-y-auto pr-1 custom-scrollbar">
                   {PERICIAS_STORYTELLING.map((per) => {
                     const valExplicito = Number(
                       fichaSelecionadaStory?.[per.key] ?? 0,
@@ -652,7 +655,7 @@ export function SessaoAtiva() {
                       <button
                         key={per.key}
                         onClick={() => void rolarPericiaStory(per)}
-                        className="flex justify-between items-center bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 px-2.5 py-1.5 rounded-lg text-xs text-zinc-200 transition-colors"
+                        className="flex justify-between items-center bg-zinc-900 hover:bg-zinc-800 active:bg-zinc-700 border border-zinc-800 px-2.5 py-2 rounded-lg text-xs text-zinc-200 transition-colors"
                       >
                         <span className="truncate">{per.label}</span>
                         <span className="font-mono text-amber-400 font-bold ml-1">
@@ -667,7 +670,7 @@ export function SessaoAtiva() {
           )}
 
           {isMestre && (
-            <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-50 w-11/12 max-w-4xl bg-zinc-950/90 backdrop-blur-md border border-zinc-800 rounded-2xl p-6 shadow-2xl flex flex-col gap-4">
+            <div className="absolute bottom-3 sm:bottom-6 left-1/2 -translate-x-1/2 z-40 w-[94%] max-w-4xl bg-zinc-950/95 backdrop-blur-md border border-zinc-800 rounded-2xl p-3.5 sm:p-6 shadow-2xl flex flex-col gap-3 sm:gap-4 max-h-[65dvh] overflow-hidden">
               {arquivoPreview && (
                 <div className="fixed inset-0 z-60 flex items-center justify-center bg-black/90 p-4">
                   <div className="bg-zinc-900 border border-zinc-700 p-6 rounded-xl text-center max-w-sm w-full shadow-2xl">
@@ -705,13 +708,20 @@ export function SessaoAtiva() {
                 </div>
               )}
 
-              <div className="flex justify-between items-center border-b border-zinc-800 pb-2">
-                <h3 className="text-red-500 font-bold uppercase tracking-wider">
-                  Painel de Narração (Storytelling)
-                </h3>
+              <div className="flex flex-wrap justify-between items-center gap-2 border-b border-zinc-800 pb-2">
+                <button
+                  type="button"
+                  onClick={() => setPainelMestreAberto(!painelMestreAberto)}
+                  className="text-red-500 font-bold uppercase tracking-wider text-xs sm:text-sm flex items-center gap-2"
+                >
+                  <span>🎬 Painel de Narração</span>
+                  <span className="text-[10px] text-zinc-400 bg-zinc-900 px-2 py-0.5 rounded border border-zinc-800">
+                    {painelMestreAberto ? "▼ Recolher" : "▲ Expandir"}
+                  </span>
+                </button>
 
-                <label className="bg-zinc-800 hover:bg-zinc-700 text-zinc-100 px-4 py-1.5 rounded cursor-pointer transition-colors border border-zinc-700 text-sm font-semibold">
-                  {uploading ? "Conjurando..." : "+ Upar Mídia (Soma no Banco)"}
+                <label className="bg-zinc-800 hover:bg-zinc-700 text-zinc-100 px-3 py-1.5 rounded cursor-pointer transition-colors border border-zinc-700 text-xs sm:text-sm font-semibold">
+                  {uploading ? "Conjurando..." : "+ Upar Mídia"}
                   <input
                     type="file"
                     className="hidden"
@@ -722,149 +732,157 @@ export function SessaoAtiva() {
                 </label>
               </div>
 
-              <div className="grid grid-cols-2 gap-6 h-48 overflow-y-auto pr-2 custom-scrollbar">
-                <div>
-                  <h4 className="text-zinc-400 text-xs mb-3 uppercase font-bold tracking-widest">
-                    Cenas (Imagens)
-                  </h4>
-                  <div className="flex flex-col gap-3">
-                    {midias
-                      .filter((m) => m.tipo === 0)
-                      .map((midia) => (
-                        <div
-                          key={midia.id}
-                          className="flex items-center gap-2 w-full group"
-                        >
-                          <button
-                            onClick={() => transmitirCena(midia.caminhoServidor)}
-                            className="flex items-center gap-3 text-left text-sm text-zinc-300 hover:text-white bg-zinc-900/50 hover:bg-zinc-800 p-2 rounded border border-zinc-800 transition-colors flex-1 overflow-hidden"
-                          >
-                            <img
-                              src={midia.caminhoServidor}
-                              alt={midia.nomeArquivo}
-                              className="w-10 h-10 object-cover rounded border border-zinc-700 group-hover:border-zinc-500 transition-colors shrink-0"
-                            />
-                            <span className="truncate font-medium">
-                              {midia.nomeArquivo}
-                            </span>
-                          </button>
-
-                          <div className="flex gap-1 bg-zinc-900/50 rounded border border-zinc-800">
-                            <a
-                              href={midia.caminhoServidor}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="p-2 text-zinc-500 hover:text-blue-400 transition-colors flex items-center justify-center"
-                              title="Abrir ou Baixar Mídia"
-                              download={midia.nomeArquivo || "midia"}
+              {painelMestreAberto && (
+                <>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6 max-h-40 sm:max-h-48 overflow-y-auto pr-1 custom-scrollbar">
+                    <div>
+                      <h4 className="text-zinc-400 text-[11px] mb-2 uppercase font-bold tracking-widest">
+                        Cenas (Imagens)
+                      </h4>
+                      <div className="flex flex-col gap-2">
+                        {midias
+                          .filter((m) => m.tipo === 0)
+                          .map((midia) => (
+                            <div
+                              key={midia.id}
+                              className="flex items-center gap-2 w-full group"
                             >
-                              🔗
-                            </a>
-                            <button
-                              onClick={(e) => handleExcluirMidia(midia.id, e)}
-                              className="p-2 text-zinc-500 hover:text-red-500 hover:bg-red-950/30 transition-colors flex items-center justify-center"
-                              title="Excluir Mídia"
-                            >
-                              🗑️
-                            </button>
-                          </div>
-                        </div>
-                      ))}
-                  </div>
-                </div>
-
-                <div>
-                  <h4 className="text-zinc-400 text-xs mb-3 uppercase font-bold tracking-widest">
-                    Trilha Sonora
-                  </h4>
-                  <div className="flex flex-col gap-2">
-                    {midias
-                      .filter((m) => m.tipo === 2)
-                      .map((midia) => (
-                        <div
-                          key={midia.id}
-                          className="flex flex-col gap-2 w-full group bg-zinc-900/50 p-2 rounded border border-zinc-800"
-                        >
-                          <div className="flex justify-between items-center w-full">
-                            <button
-                              onClick={() =>
-                                transmitirMusica(midia.caminhoServidor)
-                              }
-                              className="text-left text-sm text-emerald-500 hover:text-emerald-400 truncate transition-colors font-medium flex-1"
-                            >
-                              🎵 {midia.nomeArquivo}
-                            </button>
-                            <div className="flex gap-1">
-                              <a
-                                href={midia.caminhoServidor}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="p-2 text-zinc-500 hover:text-blue-400 transition-colors"
-                                title="Abrir Áudio em Nova Aba"
-                                download={midia.nomeArquivo || "audio"}
-                              >
-                                🔗
-                              </a>
                               <button
-                                onClick={(e) => handleExcluirMidia(midia.id, e)}
-                                className="p-2 text-zinc-500 hover:text-red-500 hover:bg-red-950/30 rounded transition-colors"
-                                title="Excluir Música"
+                                onClick={() =>
+                                  transmitirCena(midia.caminhoServidor)
+                                }
+                                className="flex items-center gap-2.5 text-left text-xs sm:text-sm text-zinc-300 hover:text-white bg-zinc-900/50 hover:bg-zinc-800 p-2 rounded border border-zinc-800 transition-colors flex-1 overflow-hidden"
                               >
-                                🗑️
+                                <img
+                                  src={midia.caminhoServidor}
+                                  alt={midia.nomeArquivo}
+                                  className="w-9 h-9 object-cover rounded border border-zinc-700 group-hover:border-zinc-500 transition-colors shrink-0"
+                                />
+                                <span className="truncate font-medium">
+                                  {midia.nomeArquivo}
+                                </span>
                               </button>
-                            </div>
-                          </div>
 
-                          {audioAtivo === midia.caminhoServidor && (
-                            <div className="flex items-center gap-2 px-1">
-                              <span className="text-[10px] text-zinc-500">
-                                Vol
-                              </span>
-                              <input
-                                type="range"
-                                min="0"
-                                max="1"
-                                step="0.05"
-                                value={volume}
-                                onChange={(e) => {
-                                  const valor = parseFloat(e.target.value);
-                                  setVolume(valor);
-                                  if (audioRef.current) {
-                                    audioRef.current.volume = valor;
+                              <div className="flex gap-1 bg-zinc-900/50 rounded border border-zinc-800">
+                                <a
+                                  href={midia.caminhoServidor}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="p-2 text-zinc-500 hover:text-blue-400 transition-colors flex items-center justify-center"
+                                  title="Abrir ou Baixar Mídia"
+                                  download={midia.nomeArquivo || "midia"}
+                                >
+                                  🔗
+                                </a>
+                                <button
+                                  onClick={(e) =>
+                                    handleExcluirMidia(midia.id, e)
                                   }
-                                }}
-                                className="w-full h-1 bg-zinc-700 rounded-lg appearance-none cursor-pointer accent-emerald-500"
-                              />
+                                  className="p-2 text-zinc-500 hover:text-red-500 hover:bg-red-950/30 transition-colors flex items-center justify-center"
+                                  title="Excluir Mídia"
+                                >
+                                  🗑️
+                                </button>
+                              </div>
                             </div>
-                          )}
-                        </div>
-                      ))}
-                  </div>
-                </div>
-              </div>
+                          ))}
+                      </div>
+                    </div>
 
-              <div className="pt-4 border-t border-zinc-800 flex justify-between items-center gap-3">
-                <span className="text-xs text-zinc-500">
-                  Invoque o tabuleiro tático a qualquer momento da narrativa:
-                </span>
-                <div className="flex gap-3">
-                  <button
-                    onClick={() => void invocarMomentoDeBatalha(true)}
-                    disabled={contagem !== null}
-                    className="bg-red-700 hover:bg-red-600 disabled:bg-red-900 text-white font-bold py-2 px-6 rounded shadow-lg shadow-red-900/20 active:scale-95 transition-all"
-                  >
-                    {contagem !== null
-                      ? `Abrindo portais em ${contagem}...`
-                      : "⚔️ Invocar Batalha e Convocar Jogadores"}
-                  </button>
-                </div>
-              </div>
+                    <div>
+                      <h4 className="text-zinc-400 text-[11px] mb-2 uppercase font-bold tracking-widest">
+                        Trilha Sonora
+                      </h4>
+                      <div className="flex flex-col gap-2">
+                        {midias
+                          .filter((m) => m.tipo === 2)
+                          .map((midia) => (
+                            <div
+                              key={midia.id}
+                              className="flex flex-col gap-2 w-full group bg-zinc-900/50 p-2 rounded border border-zinc-800"
+                            >
+                              <div className="flex justify-between items-center w-full">
+                                <button
+                                  onClick={() =>
+                                    transmitirMusica(midia.caminhoServidor)
+                                  }
+                                  className="text-left text-xs sm:text-sm text-emerald-500 hover:text-emerald-400 truncate transition-colors font-medium flex-1"
+                                >
+                                  🎵 {midia.nomeArquivo}
+                                </button>
+                                <div className="flex gap-1">
+                                  <a
+                                    href={midia.caminhoServidor}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="p-2 text-zinc-500 hover:text-blue-400 transition-colors"
+                                    title="Abrir Áudio em Nova Aba"
+                                    download={midia.nomeArquivo || "audio"}
+                                  >
+                                    🔗
+                                  </a>
+                                  <button
+                                    onClick={(e) =>
+                                      handleExcluirMidia(midia.id, e)
+                                    }
+                                    className="p-2 text-zinc-500 hover:text-red-500 hover:bg-red-950/30 rounded transition-colors"
+                                    title="Excluir Música"
+                                  >
+                                    🗑️
+                                  </button>
+                                </div>
+                              </div>
+
+                              {audioAtivo === midia.caminhoServidor && (
+                                <div className="flex items-center gap-2 px-1">
+                                  <span className="text-[10px] text-zinc-500">
+                                    Vol
+                                  </span>
+                                  <input
+                                    type="range"
+                                    min="0"
+                                    max="1"
+                                    step="0.05"
+                                    value={volume}
+                                    onChange={(e) => {
+                                      const valor = parseFloat(e.target.value);
+                                      setVolume(valor);
+                                      if (audioRef.current) {
+                                        audioRef.current.volume = valor;
+                                      }
+                                    }}
+                                    className="w-full h-1 bg-zinc-700 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+                                  />
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="pt-3 border-t border-zinc-800 flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-2">
+                    <span className="text-[11px] sm:text-xs text-zinc-500 hidden sm:inline">
+                      Invoque o tabuleiro tático a qualquer momento da narrativa:
+                    </span>
+                    <button
+                      onClick={() => void invocarMomentoDeBatalha(true)}
+                      disabled={contagem !== null}
+                      className="bg-red-700 hover:bg-red-600 disabled:bg-red-900 text-white font-bold py-2 px-4 sm:px-6 rounded-lg text-xs sm:text-sm shadow-lg shadow-red-900/20 active:scale-95 transition-all"
+                    >
+                      {contagem !== null
+                        ? `Abrindo portais em ${contagem}...`
+                        : "⚔️ Invocar Batalha e Convocar Jogadores"}
+                    </button>
+                  </div>
+                </>
+              )}
             </div>
           )}
 
           {!isMestre && !cenaAtual && (
-            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-              <p className="text-zinc-500 text-xl font-light tracking-widest animate-pulse">
+            <div className="absolute inset-0 flex items-center justify-center pointer-events-none px-4 text-center">
+              <p className="text-zinc-500 text-base sm:text-xl font-light tracking-widest animate-pulse">
                 O Mestre está preparando a cena...
               </p>
             </div>

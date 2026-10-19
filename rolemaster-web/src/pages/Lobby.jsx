@@ -105,40 +105,42 @@ export function Lobby() {
   };
 
   return (
-    <div className="min-h-screen bg-zinc-950 text-zinc-100 p-8">
-      <header className="max-w-6xl mx-auto flex justify-between items-center border-b border-zinc-800 pb-6 mb-8">
+    <div className="min-h-screen bg-zinc-950 text-zinc-100 p-4 sm:p-8">
+      <header className="max-w-6xl mx-auto flex flex-wrap justify-between items-center gap-3 border-b border-zinc-800 pb-5 sm:pb-6 mb-6 sm:mb-8">
         <div>
-          <h1 className="text-3xl font-bold text-red-600 tracking-wider uppercase">
+          <h1 className="text-2xl sm:text-3xl font-bold text-red-600 tracking-wider uppercase">
             RoleMaster
           </h1>
-          <p className="text-zinc-400 mt-1">
+          <p className="text-zinc-400 text-xs sm:text-base mt-1">
             Bem-vindo(a) à taverna,{" "}
             <span className="text-zinc-100 font-semibold">{nomeUsuario}</span>.
           </p>
         </div>
         <button
           onClick={handleLogout}
-          className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-lg text-sm font-medium transition-colors border border-zinc-700"
+          className="px-3.5 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-lg text-xs sm:text-sm font-medium transition-colors border border-zinc-700"
         >
           Sair do Sistema
         </button>
       </header>
 
       <main className="max-w-6xl mx-auto">
-        <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
-          <h2 className="text-2xl font-bold text-zinc-100">Suas Campanhas</h2>
+        <div className="flex flex-col md:flex-row justify-between items-stretch md:items-center mb-6 gap-3">
+          <h2 className="text-xl sm:text-2xl font-bold text-zinc-100">
+            Suas Campanhas
+          </h2>
 
           {/* Grupo de Botões Atualizado */}
-          <div className="flex flex-wrap gap-3">
+          <div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-2.5 sm:gap-3">
             <button
               onClick={handleSolicitarEntrada}
-              className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-100 font-bold rounded-lg transition-colors shadow-lg border border-zinc-700"
+              className="px-3 sm:px-4 py-2.5 sm:py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-100 text-xs sm:text-sm font-bold rounded-lg transition-colors shadow-lg border border-zinc-700"
             >
               Participar com Código
             </button>
             <button
               onClick={handleCriarMesa}
-              className="px-4 py-2 bg-red-700 hover:bg-red-600 text-white font-bold rounded-lg transition-colors shadow-lg shadow-red-900/20"
+              className="px-3 sm:px-4 py-2.5 sm:py-2 bg-red-700 hover:bg-red-600 text-white text-xs sm:text-sm font-bold rounded-lg transition-colors shadow-lg shadow-red-900/20"
             >
               + Criar Nova Mesa
             </button>
@@ -146,17 +148,17 @@ export function Lobby() {
         </div>
 
         {mesas.length === 0 ? (
-          <div className="flex flex-col items-center justify-center p-12 bg-zinc-900/50 border border-dashed border-zinc-700 rounded-xl">
-            <p className="text-zinc-400 mb-4 text-center">
+          <div className="flex flex-col items-center justify-center p-8 sm:p-12 bg-zinc-900/50 border border-dashed border-zinc-700 rounded-xl">
+            <p className="text-zinc-400 mb-4 text-center text-sm sm:text-base">
               Você ainda não participa de nenhuma campanha.
             </p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
             {mesas.map((mesa) => (
               <div
                 key={mesa.codigoConvite || mesa.CodigoConvite}
-                className="bg-zinc-900 border border-zinc-800 rounded-xl p-6 shadow-lg hover:border-red-900/50 transition-colors flex flex-col justify-between"
+                className="bg-zinc-900 border border-zinc-800 rounded-xl p-5 sm:p-6 shadow-lg hover:border-red-900/50 transition-colors flex flex-col justify-between"
               >
                 <div>
                   <div className="flex justify-between items-start mb-4 gap-2">
