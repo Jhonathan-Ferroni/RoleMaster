@@ -1,14 +1,13 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { HubConnectionBuilder } from "@microsoft/signalr";
-import { api } from "../services/api";
-
-const BACKEND_URL = "https://rolemaster-ioyd.onrender.com";
+import { api, HUB_URL } from "../services/api";
 
 export function Campanha() {
   const [mesa, setMesa] = useState(null);
   const [solicitacoes, setSolicitacoes] = useState([]);
-  const [conviteAberto, setConviteAberto] = useState(false); // NOVO: Controla se o convite apareceu
+  const [minhasFichas, setMinhasFichas] = useState([]);
+  const [conviteAberto, setConviteAberto] = useState(false);
   const navigate = useNavigate();
   const tenantId = localStorage.getItem("tenantId");
 
@@ -21,6 +20,15 @@ export function Campanha() {
     }
   };
 
+  const carregarMinhasFichas = async () => {
+    try {
+      const response = await api.get(`/characters/mesa/${tenantId}/minhas`);
+      setMinhasFichas(Array.isArray(response.data) ? response.data : []);
+    } catch (error) {
+      console.error("Erro ao buscar fichas do jogador:", error);
+    }
+  };
+
   const carregarMesa = async () => {
     try {
       const responseMesa = await api.get(`/mesas/${tenantId}`);
@@ -28,8 +36,10 @@ export function Campanha() {
 
       if (responseMesa.data.isMestre) {
         carregarSolicitacoes();
+      } else {
+        carregarMinhasFichas();
       }
-    } catch (error) {
+    } catch {
       alert("Erro ao carregar a mesa. O feitiço foi dissipado.");
       navigate("/lobby");
     }
@@ -41,61 +51,48 @@ export function Campanha() {
       return;
     }
     carregarMesa();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tenantId, navigate]);
 
   // ==========================================
-  // NOVO: RADAR DO JOGADOR (SIGNALR NO LOBBY)
+  // RADAR DO JOGADOR (SIGNALR NO LOBBY)
   // ==========================================
   useEffect(() => {
-    // Se a mesa ainda não carregou ou se for o Mestre, não precisa ligar o radar aqui
     if (!mesa || mesa.isMestre) return;
 
     const conexao = new HubConnectionBuilder()
-      .withUrl(`${BACKEND_URL}/campanhaHub`)
+      .withUrl(HUB_URL)
       .withAutomaticReconnect()
       .build();
 
     const startConnection = async () => {
       try {
         await conexao.start();
-        console.log("🎯 Conectado ao CampanhaHub (jogador)");
 
-        if (!tenantId) {
-          console.warn("tenantId ausente ao tentar entrar no grupo da mesa");
-        } else {
+        if (tenantId) {
           try {
             await conexao.invoke("EntrarNaMesa", tenantId);
-            console.log("Entrou no grupo da mesa:", tenantId);
           } catch (err) {
             console.error("Falha ao invocar EntrarNaMesa:", err);
           }
         }
 
-        // Fica escutando a trombeta do Mestre
         conexao.on("ReceberConvocacao", () => {
-          setConviteAberto(true); // Abre o Modal na cara do jogador!
+          setConviteAberto(true);
         });
 
-        // Ao reconectar, reentrar no grupo (importante para reconnect automático)
+        conexao.on("ModoBatalhaAlterado", (emBatalha) => {
+          if (emBatalha) setConviteAberto(true);
+        });
+
         conexao.onreconnected(async () => {
-          console.log(
-            "SignalR reconectado. Tentando reentrar no grupo da mesa...",
-          );
           if (tenantId) {
             try {
               await conexao.invoke("EntrarNaMesa", tenantId);
-              console.log(
-                "Reentrado no grupo da mesa após reconexão:",
-                tenantId,
-              );
             } catch (err) {
               console.error("Erro ao reentrar no grupo após reconexão:", err);
             }
           }
-        });
-
-        conexao.onclose((err) => {
-          console.warn("Conexão SignalR fechada:", err);
         });
       } catch (err) {
         console.error("Erro no radar da Taverna:", err);
@@ -138,9 +135,7 @@ export function Campanha() {
 
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-100 flex flex-col relative">
-      {/* ========================================== */}
-      {/* NOVO: MODAL DE CONVITE PARA O GRID          */}
-      {/* ========================================== */}
+      {/* MODAL DE CONVITE PARA O GRID */}
       {conviteAberto && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm">
           <div className="bg-zinc-900 border border-red-900 rounded-xl p-8 max-w-md text-center shadow-[0_0_50px_rgba(185,28,28,0.3)] animate-pulse">
@@ -169,7 +164,6 @@ export function Campanha() {
         </div>
       )}
 
-      {/* O resto do seu visual padrão do Cabeçalho e Main... */}
       <header className="bg-zinc-900 border-b border-zinc-800 p-4 shadow-md">
         <div className="max-w-7xl mx-auto flex justify-between items-center">
           <div className="flex items-center space-x-4">
@@ -211,13 +205,13 @@ export function Campanha() {
                   onClick={() => navigate("/aprovacao-fichas")}
                   className="bg-zinc-800 hover:bg-zinc-700 text-zinc-200 py-4 px-6 rounded-lg font-bold border border-zinc-700 transition-all shadow-md"
                 >
-                  🔗 Aprovar Fichas
+                  🔗 Gerenciar & Aprovar Fichas
                 </button>
                 <button
                   onClick={() => navigate("/sessao-ativa")}
                   className="bg-red-700 hover:bg-red-600 text-white py-4 px-6 rounded-lg font-bold transition-all shadow-lg shadow-red-900/20"
                 >
-                  ⚔️ Iniciar / Continuar Campanha
+                  ⚔️ Iniciar Storytelling / Batalha
                 </button>
               </div>
             </div>
@@ -267,18 +261,96 @@ export function Campanha() {
         ) : (
           <div className="space-y-8">
             <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-8 shadow-lg">
-              <h2 className="text-2xl font-bold text-emerald-500 mb-2">
-                Seus Personagens
-              </h2>
-              <p className="text-zinc-400 mb-6">
-                Escolha um herói para esta jornada ou envie uma nova ficha para
-                o Mestre aprovar.
-              </p>
+              <div className="flex justify-between items-center mb-6">
+                <div>
+                  <h2 className="text-2xl font-bold text-emerald-500 mb-1">
+                    Seus Personagens ({minhasFichas.length})
+                  </h2>
+                  <p className="text-zinc-400 text-sm">
+                    Gerencie seus heróis desta campanha ou submeta uma nova ficha para o Mestre.
+                  </p>
+                </div>
+              </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+                {minhasFichas.map((ficha) => (
+                  <div
+                    key={ficha.id}
+                    className="bg-zinc-950 border border-zinc-800 rounded-xl p-5 flex flex-col justify-between shadow-md"
+                  >
+                    <div>
+                      <div className="flex justify-between items-start gap-2 mb-2">
+                        <h3 className="text-lg font-bold text-white uppercase truncate">
+                          {ficha.nome}
+                        </h3>
+                        {ficha.status === 0 ? (
+                          <span className="bg-amber-950 text-amber-400 border border-amber-800 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase">
+                            Pendente
+                          </span>
+                        ) : ficha.status === 1 ? (
+                          <span className="bg-emerald-950 text-emerald-400 border border-emerald-800 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase">
+                            Aprovado
+                          </span>
+                        ) : (
+                          <span className="bg-red-950 text-red-400 border border-red-800 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase">
+                            Rejeitado
+                          </span>
+                        )}
+                      </div>
+
+                      <p className="text-xs text-zinc-400 mb-4">
+                        {ficha.raca || "Aventureiro"} • {ficha.classe || "Guerreiro"}{" "}
+                        (Nv {ficha.nivel || 1})
+                      </p>
+
+                      <div className="grid grid-cols-3 gap-2 text-center mb-4">
+                        <div className="bg-zinc-900 border border-zinc-800 p-2 rounded">
+                          <span className="block text-[9px] text-zinc-500 uppercase">
+                            PV
+                          </span>
+                          <span className="text-sm font-bold text-emerald-400">
+                            {ficha.pontosDeVidaAtuais}/{ficha.pontosDeVidaMaximos}
+                          </span>
+                        </div>
+                        <div className="bg-zinc-900 border border-zinc-800 p-2 rounded">
+                          <span className="block text-[9px] text-zinc-500 uppercase">
+                            CA
+                          </span>
+                          <span className="text-sm font-bold text-white">
+                            🛡️ {ficha.classeArmadura}
+                          </span>
+                        </div>
+                        <div className="bg-zinc-900 border border-zinc-800 p-2 rounded">
+                          <span className="block text-[9px] text-zinc-500 uppercase">
+                            Desloc.
+                          </span>
+                          <span className="text-sm font-bold text-sky-400">
+                            {ficha.deslocamento || 9}m
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2 pt-3 border-t border-zinc-800">
+                      <button
+                        onClick={() => navigate(`/ficha/${ficha.id}`)}
+                        className="bg-zinc-900 hover:bg-zinc-800 text-zinc-300 py-2 rounded text-xs font-bold border border-zinc-700 transition-colors"
+                      >
+                        📜 Ver Ficha
+                      </button>
+                      <button
+                        onClick={() => navigate(`/ficha/${ficha.id}/editar`)}
+                        className="bg-zinc-800 hover:bg-zinc-700 text-emerald-400 py-2 rounded text-xs font-bold border border-zinc-700 transition-colors"
+                      >
+                        ✏️ Editar
+                      </button>
+                    </div>
+                  </div>
+                ))}
+
                 <div
                   onClick={() => navigate("/criar-ficha")}
-                  className="border-2 border-dashed border-zinc-700 rounded-lg p-6 flex flex-col items-center justify-center text-zinc-500 hover:text-emerald-500 hover:border-emerald-500 transition-colors cursor-pointer"
+                  className="border-2 border-dashed border-zinc-700 rounded-xl p-6 flex flex-col items-center justify-center text-zinc-500 hover:text-emerald-500 hover:border-emerald-500 transition-colors cursor-pointer min-h-[190px]"
                 >
                   <span className="text-3xl mb-2">+</span>
                   <span className="font-bold">Submeter Nova Ficha</span>

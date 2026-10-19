@@ -2,17 +2,37 @@ import { useState, useEffect } from "react";
 import { useNavigate, useParams, useLocation } from "react-router-dom";
 import { api } from "../services/api";
 
+const ARMAS_RAPIDAS = [
+  { name: "Espada Longa", damage: "1d8", properties: "Corpo a Corpo (1.5m) • Versátil (1d10)" },
+  { name: "Machado Grande", damage: "1d12", properties: "Pesado, Corpo a Corpo (1.5m)" },
+  { name: "Rapieira", damage: "1d8", properties: "Acuidade, Corpo a Corpo (1.5m)" },
+  { name: "Adaga", damage: "1d4", properties: "Acuidade, Arremesso (6m)" },
+  { name: "Arco Longo", damage: "1d8", properties: "Distância (18m)" },
+  { name: "Besta Leve", damage: "1d8", properties: "Distância (12m)" },
+  { name: "Maça Sagrada", damage: "1d6", properties: "Corpo a Corpo (1.5m)" },
+  { name: "Cajado Arcano", damage: "1d6", properties: "Corpo a Corpo (1.5m)" },
+];
+
+const MAGIAS_RAPIDAS = [
+  { name: "Raio de Fogo", slot: 0, properties: "ataque:1d10:18", description: "Disparo flamejante a até 18m (1d10 de dano de fogo)." },
+  { name: "Chama Sagrada", slot: 0, properties: "ataque:1d8:18", description: "Luz radiante que causa 1d8 de dano a até 18m." },
+  { name: "Mísseis Mágicos", slot: 1, properties: "ataque:3d4+3:18", description: "Dardos arcanos infalíveis (3d4+3 de dano de energia)." },
+  { name: "Curar Ferimentos", slot: 1, properties: "cura:1d8+3:4.5", description: "Restaura 1d8 + Mod. de conjuração em PV." },
+  { name: "Palavra Curativa", slot: 1, properties: "cura:1d4+3:18", description: "Cura rápida à distância (1d4+3 PV, Ação Bônus)." },
+  { name: "Retomar o Fôlego", slot: 1, properties: "cura:1d10+3:1.5", description: "Habilidade de Guerreiro que recupera 1d10+Nível PV." },
+  { name: "Bola de Fogo", slot: 3, properties: "ataque:8d6:18", description: "Explosão devastadora de chamas (8d6 de dano de fogo)." },
+];
+
 export function CriarFicha() {
   const navigate = useNavigate();
-  const { id } = useParams(); // Pega o ID da ficha na URL (se existir)
-  const location = useLocation(); // Lê o caminho atual
+  const { id } = useParams();
+  const location = useLocation();
   const tenantId = localStorage.getItem("tenantId");
 
-  // A mágica que define o modo da tela:
   const isEdit = location.pathname.endsWith("/editar");
   const isReadOnly = id && !isEdit;
 
-  const [carregando, setCarregando] = useState(!!id); // Se tem ID, começa carregando
+  const [carregando, setCarregando] = useState(!!id);
   const [enviando, setEnviando] = useState(false);
 
   const [ficha, setFicha] = useState({
@@ -80,9 +100,26 @@ export function CriarFicha() {
     outrasProficienciasEIdiomas: "",
     tesouros: "",
     caracteristicasETalentos: "",
+    equipamento: [],
+    magia: [],
   });
 
-  // Busca os dados do banco caso estejamos editando ou visualizando
+  // Estados para adição de nova arma e nova magia
+  const [novaArma, setNovaArma] = useState({
+    name: "",
+    damage: "1d8",
+    properties: "Corpo a Corpo (1.5m)",
+  });
+
+  const [novaMagia, setNovaMagia] = useState({
+    name: "",
+    slot: 1,
+    tipoAcao: "ataque",
+    dados: "2d6",
+    alcance: "15",
+    description: "",
+  });
+
   useEffect(() => {
     if (!tenantId && !id) {
       alert("Selecione uma mesa antes de forjar um herói!");
@@ -93,18 +130,20 @@ export function CriarFicha() {
     if (id) {
       buscarFicha();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, tenantId, navigate]);
 
   const buscarFicha = async () => {
     try {
       const response = await api.get(`/characters/${id}`);
-      // Pega os dados nulos do banco e transforma em string vazia para o React não reclamar
       const dadosTratados = { ...response.data };
       Object.keys(dadosTratados).forEach((key) => {
         if (dadosTratados[key] === null) dadosTratados[key] = "";
       });
+      if (!Array.isArray(dadosTratados.equipamento)) dadosTratados.equipamento = [];
+      if (!Array.isArray(dadosTratados.magia)) dadosTratados.magia = [];
       setFicha(dadosTratados);
-    } catch (error) {
+    } catch {
       alert("Erro ao ler os pergaminhos da ficha.");
       navigate(-1);
     } finally {
@@ -119,7 +158,7 @@ export function CriarFicha() {
   };
 
   const handleChange = (e) => {
-    if (isReadOnly) return; // Trava extra
+    if (isReadOnly) return;
     const { name, value, type, checked } = e.target;
     setFicha((prev) => ({
       ...prev,
@@ -132,6 +171,84 @@ export function CriarFicha() {
     }));
   };
 
+  // === GERENCIAMENTO DE ARMAS (EQUIPAMENTO) ===
+  const adicionarArma = (armaObj) => {
+    if (isReadOnly) return;
+    const item = armaObj || novaArma;
+    if (!item.name.trim()) return;
+
+    setFicha((prev) => ({
+      ...prev,
+      equipamento: [
+        ...(prev.equipamento || []),
+        {
+          name: item.name.trim(),
+          damage: item.damage.trim() || "1d6",
+          properties: item.properties.trim() || "Corpo a Corpo (1.5m)",
+        },
+      ],
+    }));
+
+    if (!armaObj) {
+      setNovaArma({ name: "", damage: "1d8", properties: "Corpo a Corpo (1.5m)" });
+    }
+  };
+
+  const removerArma = (idx) => {
+    if (isReadOnly) return;
+    setFicha((prev) => ({
+      ...prev,
+      equipamento: (prev.equipamento || []).filter((_, i) => i !== idx),
+    }));
+  };
+
+  // === GERENCIAMENTO DE MAGIAS (GRIMÓRIO) ===
+  const adicionarMagia = (magiaPreset) => {
+    if (isReadOnly) return;
+    if (magiaPreset) {
+      setFicha((prev) => ({
+        ...prev,
+        magia: [...(prev.magia || []), { ...magiaPreset }],
+      }));
+      return;
+    }
+
+    if (!novaMagia.name.trim()) return;
+    const propFormatada = `${novaMagia.tipoAcao}:${novaMagia.dados || "1d8"}:${novaMagia.alcance || "15"}`;
+
+    setFicha((prev) => ({
+      ...prev,
+      magia: [
+        ...(prev.magia || []),
+        {
+          name: novaMagia.name.trim(),
+          slot: Number(novaMagia.slot || 0),
+          properties: propFormatada,
+          description:
+            novaMagia.description.trim() ||
+            `${novaMagia.tipoAcao === "cura" ? "Restaura" : "Causa"} ${novaMagia.dados} (Alcance ${novaMagia.alcance}m)`,
+        },
+      ],
+    }));
+
+    setNovaMagia({
+      name: "",
+      slot: 1,
+      tipoAcao: "ataque",
+      dados: "2d6",
+      alcance: "15",
+      description: "",
+    });
+  };
+
+  const removerMagia = (idx) => {
+    if (isReadOnly) return;
+    setFicha((prev) => ({
+      ...prev,
+      magia: (prev.magia || []).filter((_, i) => i !== idx),
+    }));
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (isReadOnly) return;
@@ -140,7 +257,7 @@ export function CriarFicha() {
 
     const payload = {
       ...ficha,
-      mesaId: ficha.mesaId || tenantId, // Mantém a mesa original se for edição
+      mesaId: ficha.mesaId || tenantId,
       strMod: getMod(ficha.forca),
       dexMod: getMod(ficha.destreza),
       conMod: getMod(ficha.constituicao),
@@ -148,6 +265,8 @@ export function CriarFicha() {
       wisMod: getMod(ficha.sabedoria),
       chaMod: getMod(ficha.carisma),
       idade: ficha.idade ? Number(ficha.idade) : null,
+      equipamento: Array.isArray(ficha.equipamento) ? ficha.equipamento : [],
+      magia: Array.isArray(ficha.magia) ? ficha.magia : [],
     };
 
     try {
@@ -158,8 +277,8 @@ export function CriarFicha() {
         await api.post("/characters", payload);
         alert("A Lenda foi forjada e enviada ao Mestre!");
       }
-      navigate(-1); // Volta para a tela anterior (Campanha ou Gestão)
-    } catch (error) {
+      navigate(-1);
+    } catch {
       alert("Falha ao salvar a ficha. Verifique os feitiços.");
       setEnviando(false);
     }
@@ -477,7 +596,261 @@ export function CriarFicha() {
             </div>
           </div>
 
-          {/* BOTÕES DE AÇÃO (Escondidos se for Visualização) */}
+          {/* ============================================================== */}
+          {/* SEÇÃO NOVA: ARMAS / EQUIPAMENTOS E GRIMÓRIO DE MAGIAS          */}
+          {/* ============================================================== */}
+          <div className="lg:col-span-12 grid grid-cols-1 md:grid-cols-2 gap-6 pt-4 border-t border-zinc-800">
+            {/* COLUNA ARMAS E EQUIPAMENTOS */}
+            <div className="bg-zinc-950 border border-zinc-800 rounded-xl p-4 space-y-4">
+              <div className="flex justify-between items-center border-b border-zinc-800 pb-2">
+                <h3 className="text-xs font-bold text-red-500 uppercase tracking-wider">
+                  ⚔️ Armas & Equipamentos de Combate ({(ficha.equipamento || []).length})
+                </h3>
+              </div>
+
+              {!isReadOnly && (
+                <>
+                  {/* Atalhos Rápidos D&D 5e */}
+                  <div>
+                    <span className="block text-[10px] text-zinc-500 uppercase font-bold mb-1.5">
+                      Adicionar Arma Clássica D&D (1 Clique):
+                    </span>
+                    <div className="flex flex-wrap gap-1.5">
+                      {ARMAS_RAPIDAS.map((a) => (
+                        <button
+                          key={a.name}
+                          type="button"
+                          onClick={() => adicionarArma(a)}
+                          className="bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 text-zinc-300 px-2 py-1 rounded text-[10px] font-semibold transition-colors"
+                        >
+                          + {a.name} ({a.damage})
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Formulário de Arma Customizada */}
+                  <div className="grid grid-cols-12 gap-2 bg-zinc-900/60 p-2.5 rounded-lg border border-zinc-800">
+                    <input
+                      type="text"
+                      placeholder="Nome da Arma (ex: Katana)"
+                      value={novaArma.name}
+                      onChange={(e) =>
+                        setNovaArma({ ...novaArma, name: e.target.value })
+                      }
+                      className="col-span-5 bg-zinc-950 border border-zinc-700 rounded px-2 py-1.5 text-xs text-white"
+                    />
+                    <input
+                      type="text"
+                      placeholder="Dano (ex: 1d8)"
+                      value={novaArma.damage}
+                      onChange={(e) =>
+                        setNovaArma({ ...novaArma, damage: e.target.value })
+                      }
+                      className="col-span-2 bg-zinc-950 border border-zinc-700 rounded px-2 py-1.5 text-xs text-white text-center font-mono"
+                    />
+                    <input
+                      type="text"
+                      placeholder="Propriedades (ex: Acuidade, 1.5m)"
+                      value={novaArma.properties}
+                      onChange={(e) =>
+                        setNovaArma({ ...novaArma, properties: e.target.value })
+                      }
+                      className="col-span-3 bg-zinc-950 border border-zinc-700 rounded px-2 py-1.5 text-xs text-white"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => adicionarArma()}
+                      className="col-span-2 bg-red-700 hover:bg-red-600 text-white rounded text-xs font-bold"
+                    >
+                      + Add
+                    </button>
+                  </div>
+                </>
+              )}
+
+              {/* Lista de Armas Cadastradas */}
+              <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                {(ficha.equipamento || []).length === 0 ? (
+                  <p className="text-xs text-zinc-500 italic text-center py-4">
+                    Nenhuma arma vinculada ainda. Adicione acima para usá-la no Tabuleiro!
+                  </p>
+                ) : (
+                  (ficha.equipamento || []).map((eq, i) => (
+                    <div
+                      key={i}
+                      className="flex items-center justify-between bg-zinc-900 border border-zinc-800 px-3 py-2 rounded-lg text-xs"
+                    >
+                      <div>
+                        <span className="font-bold text-white mr-2">
+                          ⚔️ {eq.name}
+                        </span>
+                        <span className="text-red-400 font-mono font-bold mr-2">
+                          [{eq.damage}]
+                        </span>
+                        <span className="text-zinc-400 text-[11px]">
+                          {eq.properties}
+                        </span>
+                      </div>
+                      {!isReadOnly && (
+                        <button
+                          type="button"
+                          onClick={() => removerArma(i)}
+                          className="text-zinc-500 hover:text-red-500 font-bold px-2"
+                        >
+                          ✕
+                        </button>
+                      )}
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+
+            {/* COLUNA GRIMÓRIO DE MAGIAS E HABILIDADES */}
+            <div className="bg-zinc-950 border border-zinc-800 rounded-xl p-4 space-y-4">
+              <div className="flex justify-between items-center border-b border-zinc-800 pb-2">
+                <h3 className="text-xs font-bold text-purple-400 uppercase tracking-wider">
+                  ✨ Grimório de Magias & Habilidades ({(ficha.magia || []).length})
+                </h3>
+              </div>
+
+              {!isReadOnly && (
+                <>
+                  {/* Atalhos Rápidos de Magias */}
+                  <div>
+                    <span className="block text-[10px] text-zinc-500 uppercase font-bold mb-1.5">
+                      Adicionar Magia/Habilidade D&D (1 Clique):
+                    </span>
+                    <div className="flex flex-wrap gap-1.5">
+                      {MAGIAS_RAPIDAS.map((m) => (
+                        <button
+                          key={m.name}
+                          type="button"
+                          onClick={() => adicionarMagia(m)}
+                          className="bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 text-purple-300 px-2 py-1 rounded text-[10px] font-semibold transition-colors"
+                        >
+                          + {m.name}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Formulário de Magia Customizada */}
+                  <div className="space-y-2 bg-zinc-900/60 p-2.5 rounded-lg border border-zinc-800">
+                    <div className="grid grid-cols-12 gap-2">
+                      <input
+                        type="text"
+                        placeholder="Nome da Magia/Habilidade"
+                        value={novaMagia.name}
+                        onChange={(e) =>
+                          setNovaMagia({ ...novaMagia, name: e.target.value })
+                        }
+                        className="col-span-5 bg-zinc-950 border border-zinc-700 rounded px-2 py-1.5 text-xs text-white"
+                      />
+                      <select
+                        value={novaMagia.tipoAcao}
+                        onChange={(e) =>
+                          setNovaMagia({ ...novaMagia, tipoAcao: e.target.value })
+                        }
+                        className="col-span-3 bg-zinc-950 border border-zinc-700 rounded px-2 py-1.5 text-xs text-white"
+                      >
+                        <option value="ataque">🔮 Dano</option>
+                        <option value="cura">✨ Cura</option>
+                      </select>
+                      <input
+                        type="text"
+                        placeholder="Dados (2d6)"
+                        value={novaMagia.dados}
+                        onChange={(e) =>
+                          setNovaMagia({ ...novaMagia, dados: e.target.value })
+                        }
+                        className="col-span-2 bg-zinc-950 border border-zinc-700 rounded px-2 py-1.5 text-xs text-white text-center font-mono"
+                      />
+                      <input
+                        type="number"
+                        placeholder="Nv"
+                        value={novaMagia.slot}
+                        onChange={(e) =>
+                          setNovaMagia({ ...novaMagia, slot: e.target.value })
+                        }
+                        className="col-span-2 bg-zinc-950 border border-zinc-700 rounded px-2 py-1.5 text-xs text-white text-center"
+                      />
+                    </div>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        placeholder="Descrição do efeito..."
+                        value={novaMagia.description}
+                        onChange={(e) =>
+                          setNovaMagia({
+                            ...novaMagia,
+                            description: e.target.value,
+                          })
+                        }
+                        className="flex-1 bg-zinc-950 border border-zinc-700 rounded px-2 py-1.5 text-xs text-white"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => adicionarMagia()}
+                        className="bg-purple-700 hover:bg-purple-600 text-white px-4 py-1.5 rounded text-xs font-bold"
+                      >
+                        + Add
+                      </button>
+                    </div>
+                  </div>
+                </>
+              )}
+
+              {/* Lista de Magias Cadastradas */}
+              <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                {(ficha.magia || []).length === 0 ? (
+                  <p className="text-xs text-zinc-500 italic text-center py-4">
+                    Nenhuma magia ou habilidade especial cadastrada.
+                  </p>
+                ) : (
+                  (ficha.magia || []).map((m, i) => (
+                    <div
+                      key={i}
+                      className="flex items-center justify-between bg-zinc-900 border border-zinc-800 px-3 py-2 rounded-lg text-xs"
+                    >
+                      <div className="min-w-0 pr-2">
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-purple-300">
+                            ✨ {m.name}
+                          </span>
+                          <span className="text-[10px] bg-zinc-800 text-zinc-400 px-1.5 rounded font-mono">
+                            Nv {m.slot ?? 0}
+                          </span>
+                          {m.properties && (
+                            <span className="text-[10px] text-emerald-400 font-mono">
+                              [{m.properties}]
+                            </span>
+                          )}
+                        </div>
+                        {m.description && (
+                          <p className="text-[11px] text-zinc-400 truncate mt-0.5">
+                            {m.description}
+                          </p>
+                        )}
+                      </div>
+                      {!isReadOnly && (
+                        <button
+                          type="button"
+                          onClick={() => removerMagia(i)}
+                          className="text-zinc-500 hover:text-red-500 font-bold px-2"
+                        >
+                          ✕
+                        </button>
+                      )}
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* BOTÕES DE AÇÃO */}
           <div className="lg:col-span-12 flex justify-end gap-4 mt-6 pt-6 border-t border-zinc-800">
             <button
               type="button"

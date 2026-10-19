@@ -144,6 +144,25 @@ public class CharactersController : ControllerBase
         return Ok(todas);
     }
 
+    [HttpPost("mesa/{mesaId}/descanso-longo")]
+    public async Task<IActionResult> DescansoLongo(string mesaId)
+    {
+        var fichas = await _context.Characters
+            .Where(c => c.MesaId == mesaId)
+            .ToListAsync();
+
+        foreach (var f in fichas)
+        {
+            f.PontosDeVidaAtuais = f.PontosDeVidaMaximos;
+            f.PontosDeVidaTemporarios = 0;
+            f.SalvaguardaMorteSucessos = 0;
+            f.SalvaguardaMorteFalhas = 0;
+        }
+
+        await _context.SaveChangesAsync();
+        return Ok(fichas);
+    }
+
     // --- ROTAS DE CRUD TRADICIONAL --- //
 
     [HttpGet("{id}")]
@@ -190,13 +209,59 @@ public class CharactersController : ControllerBase
     [HttpPut("{id}")]
     public async Task<IActionResult> Atualizar(int id, [FromBody] Character characterAtualizado)
     {
-        var character = await _context.Characters.FindAsync(id);
+        var character = await _context.Characters
+            .Include(c => c.Equipamento)
+            .Include(c => c.Magia)
+            .FirstOrDefaultAsync(c => c.Id == id);
 
         if (character == null)
             return NotFound("Personagem não encontrado.");
 
-        // TRUQUE SÊNIOR: Atualiza as mais de 50 propriedades de uma única vez
+        characterAtualizado.Id = id;
+        characterAtualizado.TenantId = character.TenantId;
+        characterAtualizado.MesaId = string.IsNullOrEmpty(characterAtualizado.MesaId)
+            ? character.MesaId
+            : characterAtualizado.MesaId;
+
+        // Atualiza as propriedades escalares da ficha
         _context.Entry(character).CurrentValues.SetValues(characterAtualizado);
+
+        // Sincroniza a lista de Equipamentos (Armas/Itens)
+        if (characterAtualizado.Equipamento != null)
+        {
+            if (character.Equipamento != null && character.Equipamento.Any())
+            {
+                _context.Equipamentos.RemoveRange(character.Equipamento);
+            }
+
+            character.Equipamento = characterAtualizado.Equipamento.Select(eq => new Equipamento
+            {
+                Name = eq.Name,
+                Damage = eq.Damage,
+                Properties = eq.Properties,
+                CharacterId = id,
+                TenantId = character.TenantId
+            }).ToList();
+        }
+
+        // Sincroniza a lista de Magias (Grimório/Habilidades)
+        if (characterAtualizado.Magia != null)
+        {
+            if (character.Magia != null && character.Magia.Any())
+            {
+                _context.Magias.RemoveRange(character.Magia);
+            }
+
+            character.Magia = characterAtualizado.Magia.Select(m => new Magia
+            {
+                Name = m.Name,
+                Description = m.Description,
+                Properties = m.Properties,
+                Slot = m.Slot,
+                CharacterId = id,
+                TenantId = character.TenantId
+            }).ToList();
+        }
 
         await _context.SaveChangesAsync();
 

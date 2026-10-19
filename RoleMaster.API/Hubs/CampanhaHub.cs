@@ -73,4 +73,10 @@ public class CampanhaHub : Hub
     {
         await Clients.Group(mesaId).SendAsync("CenarioBatalhaAtualizado", cenario);
     }
+
+    // Transmite rolagens de dados e testes de perícia durante o Storytelling
+    public async Task EnviarRolagemStorytelling(string mesaId, object rolagem)
+    {
+        await Clients.Group(mesaId).SendAsync("ReceberRolagemStorytelling", rolagem);
+    }
 }

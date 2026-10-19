@@ -8,13 +8,19 @@ using Microsoft.IdentityModel.Tokens;
 using System.Text;
 using CloudinaryDotNet;
 
+using System.Text.Json.Serialization;
+
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddDbContext<RoleMasterDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
 
 // 1. ADICIONAR SERVIÇOS AO CONTAINER
-builder.Services.AddControllers();
+builder.Services.AddControllers()
+    .AddJsonOptions(options =>
+    {
+        options.JsonSerializerOptions.ReferenceHandler = ReferenceHandler.IgnoreCycles;
+    });
 
 // === INÍCIO DA CONFIGURAÇÃO SEGURA DE CORS ===
 var allowedOrigins =  new[] { "http://localhost:5173",
@@ -103,6 +109,36 @@ builder.Services.AddSingleton(cloudinary);
 builder.Services.AddHostedService<RoleMaster.API.Workers.LimpadorDeMidiasWorker>();
 
 var app = builder.Build();
+
+// Garante que novas tabelas (como CenariosBatalha) e migrações existam no banco ao iniciar
+using (var scope = app.Services.CreateScope())
+{
+    try
+    {
+        var db = scope.ServiceProvider.GetRequiredService<RoleMasterDbContext>();
+        if (db.Database.IsRelational())
+        {
+            db.Database.ExecuteSqlRaw(@"
+                CREATE TABLE IF NOT EXISTS ""CenariosBatalha"" (
+                    ""Id"" SERIAL PRIMARY KEY,
+                    ""MesaId"" TEXT NOT NULL,
+                    ""Nome"" TEXT NOT NULL,
+                    ""Tema"" TEXT NOT NULL DEFAULT 'masmorra',
+                    ""FundoUrl"" TEXT NULL,
+                    ""Largura"" INTEGER NOT NULL DEFAULT 14,
+                    ""Altura"" INTEGER NOT NULL DEFAULT 10,
+                    ""PropsJson"" TEXT NOT NULL DEFAULT '[]',
+                    ""AtualizadoEm"" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+                    ""TenantId"" TEXT NULL
+                );
+            ");
+        }
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"[Startup DB Check]: {ex.Message}");
+    }
+}
 
 // 2. CONFIGURAR O PIPELINE DE REQUISIÇÕES HTTP (MIDDLEWARES)
 

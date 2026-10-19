@@ -4,6 +4,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using System.ComponentModel.DataAnnotations;
+using System.Text.Json.Serialization;
 
 namespace RoleMaster.Core.Entities
 {
@@ -14,6 +15,7 @@ namespace RoleMaster.Core.Entities
         public string Properties { get; set; } = string.Empty;
 
         public int? CharacterId { get; set; }
+        [JsonIgnore]
         public Character? Character { get; set; }
     }
 }

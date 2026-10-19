@@ -1,11 +1,9 @@
 import { useState, useEffect, useMemo } from "react";
-import { api } from "../services/api";
+import { api, obterUsuarioLogado } from "../services/api";
 import { FichaModal } from "../pages/FichaModel";
 import {
-  METROS_POR_QUADRADO,
   calcularDistanciaMetros,
   calcularModificador,
-  formatarModificador,
   rolarDado,
   rolarExpressaoDados,
   obterAcoesDaFicha,
@@ -14,6 +12,14 @@ import {
   CENARIOS_PADROES,
   FICHAS_PADROES_LOCAIS,
 } from "../data/dndPresets";
+
+const CONDICOES_DND = [
+  { id: "abencoado", nome: "Abençoado (+1d4)", icone: "✨", desc: "Soma +1d4 nas rolagens de ataque." },
+  { id: "envenenado", nome: "Envenenado", icone: "🤢", desc: "Desvantagem nas rolagens de ataque." },
+  { id: "caido", nome: "Caído (Prone)", icone: "🔻", desc: "Ataques corpo a corpo contra têm Vantagem." },
+  { id: "atordoado", nome: "Atordoado", icone: "💫", desc: "Incapaz de agir; ataques contra têm Vantagem." },
+  { id: "concentrando", nome: "Concentração", icone: "🧠", desc: "Mantendo magia ativa de concentração." },
+];
 
 const ICONES_CLASSES = {
   guerreiro: "🛡️",
@@ -59,6 +65,8 @@ export function TabuleiroBatalha({
   estadoExterno,
   onVoltarStorytelling,
 }) {
+  const usuarioLogado = obterUsuarioLogado();
+
   // === FICHAS E CENÁRIOS ===
   const [fichasMesa, setFichasMesa] = useState([]);
   const [carregandoFichas, setCarregandoFichas] = useState(false);
@@ -99,6 +107,7 @@ export function TabuleiroBatalha({
   const [abaLateral, setAbaLateral] = useState("combate"); // 'combate' | 'spawn' | 'cenario'
   const [fichaParaSpawnId, setFichaParaSpawnId] = useState("");
   const [faccaoSpawn, setFaccaoSpawn] = useState("heroi"); // 'heroi' | 'inimigo' | 'neutro'
+  const [spawnOculto, setSpawnOculto] = useState(false);
   const [propSelecionado, setPropSelecionado] = useState(PROPS_CATALOGO[0]);
   const [modoBorrachaProp, setModoBorrachaProp] = useState(false);
   const [nomeNovoCenario, setNomeNovoCenario] = useState("");
@@ -107,7 +116,16 @@ export function TabuleiroBatalha({
   const [fichaModalAberta, setFichaModalAberta] = useState(false);
   const [fichaModalDados, setFichaModalDados] = useState({ id: null, objeto: null });
 
-  // Sincroniza quando recebe estado completo via SignalR (de outro jogador ou do Mestre)
+  // Verifica se o usuário atual tem permissão para controlar um token específico
+  const podeControlarToken = (tok) => {
+    if (!tok) return false;
+    if (isMestre) return true;
+    if (tok.faccao === "inimigo") return false;
+    const donoId = tok.ficha?.usuarioId;
+    if (!donoId) return tok.faccao === "heroi";
+    return Number(donoId) === Number(usuarioLogado?.id);
+  };
+
   useEffect(() => {
     if (!estadoExterno) return;
     if (estadoExterno.cenarioAtual) setCenarioAtual(estadoExterno.cenarioAtual);
@@ -119,7 +137,6 @@ export function TabuleiroBatalha({
     if (Array.isArray(estadoExterno.logsCombate)) setLogsCombate(estadoExterno.logsCombate);
   }, [estadoExterno]);
 
-  // Ouvintes em tempo real do SignalR específicos do Tabuleiro
   useEffect(() => {
     if (!conexaoSignalR) return;
 
@@ -167,7 +184,6 @@ export function TabuleiroBatalha({
     };
   }, [conexaoSignalR]);
 
-  // Carrega fichas da mesa e cenários salvos ao iniciar
   useEffect(() => {
     if (!tenantId) return;
     carregarFichasDaMesa();
@@ -188,7 +204,7 @@ export function TabuleiroBatalha({
     try {
       localStorage.setItem(`rolemaster_batalha_${tenantId}`, JSON.stringify(pacote));
     } catch {
-      // ignora erro de quota
+      // ignora
     }
 
     if (conexaoSignalR) {
@@ -200,7 +216,6 @@ export function TabuleiroBatalha({
     }
   };
 
-  // Recupera estado salvo da sessão caso exista
   useEffect(() => {
     if (!tenantId) return;
     try {
@@ -239,7 +254,6 @@ export function TabuleiroBatalha({
   const gerarFichasPadroesNaMesa = async () => {
     setCarregandoFichas(true);
     try {
-      // Tenta primeiro a rota dedicada de templates padrões no backend
       const res = await api.post(`/characters/mesa/${tenantId}/padroes`);
       if (Array.isArray(res.data) && res.data.length > 0) {
         setFichasMesa(res.data);
@@ -248,7 +262,6 @@ export function TabuleiroBatalha({
         return;
       }
     } catch {
-      // Fallback caso o backend em nuvem ainda não tenha o endpoint /padroes: cria via POST /characters ou mescla localmente
       const criadas = [...fichasMesa];
       for (const template of FICHAS_PADROES_LOCAIS) {
         const jaExiste = criadas.some(
@@ -327,7 +340,7 @@ export function TabuleiroBatalha({
         return;
       }
     } catch {
-      // Usa cenários salvos localmente se a rota não estiver ativa no Render
+      // fallback local
     }
     setCenariosSalvos(locais);
   };
@@ -343,7 +356,6 @@ export function TabuleiroBatalha({
       nome: nomeFinal,
     };
 
-    // Salva localmente para garantia imediata
     const chaveLocal = `rolemaster_cenarios_${tenantId}`;
     const novaLista = [
       objetoCenario,
@@ -359,7 +371,6 @@ export function TabuleiroBatalha({
       // ignora
     }
 
-    // Tenta persistir também na API .NET
     try {
       const payloadApi = {
         mesaId: tenantId,
@@ -380,7 +391,7 @@ export function TabuleiroBatalha({
         }
       }
     } catch {
-      // Mantém versão local
+      // mantém local
     }
 
     adicionarLog("sistema", `🗺️ Cenário "${nomeFinal}" salvo com sucesso!`);
@@ -413,14 +424,16 @@ export function TabuleiroBatalha({
       horario: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
       ...extras,
     };
-    setLogsCombate((prev) => {
-      const atualizados = [novoLog, ...prev.slice(0, 49)];
-      return atualizados;
-    });
+    setLogsCombate((prev) => [novoLog, ...prev.slice(0, 49)]);
     return novoLog;
   };
 
-  // === SELECIONADOS E TURNO ATUAL ===
+  // Filtra tokens visíveis para jogadores (Mestre vê todos, inclusive ocultos)
+  const tokensVisiveis = useMemo(
+    () => (isMestre ? tokens : tokens.filter((t) => !t.oculto)),
+    [tokens, isMestre]
+  );
+
   const tokenSelecionado = useMemo(
     () => tokens.find((t) => t.id === tokenSelecionadoId) || null,
     [tokens, tokenSelecionadoId]
@@ -436,11 +449,11 @@ export function TabuleiroBatalha({
     return obterAcoesDaFicha(tokenSelecionado.ficha);
   }, [tokenSelecionado]);
 
-  // === VERIFICAÇÃO DE CÉLULAS ALCANÇÁVEIS (MOVIMENTO E ALCANCE DE AÇÃO) ===
   const propNaCelula = (x, y) =>
     (cenarioAtual.props || []).find((p) => p.x === x && p.y === y) || null;
 
-  const tokenNaCelula = (x, y) => tokens.find((t) => t.x === x && t.y === y) || null;
+  const tokenNaCelula = (x, y) =>
+    tokensVisiveis.find((t) => t.x === x && t.y === y) || null;
 
   const custoMovimentoParaCelula = (origemX, origemY, destX, destY) => {
     const distBase = calcularDistanciaMetros(origemX, origemY, destX, destY);
@@ -453,7 +466,7 @@ export function TabuleiroBatalha({
   // === SPAWNAR PERSONAGEM NO GRID ===
   const spawnarPersonagemNaCelula = async (x, y) => {
     if (!isMestre) return;
-    const ocupado = tokenNaCelula(x, y);
+    const ocupado = tokens.find((t) => t.x === x && t.y === y);
     if (ocupado) {
       setTokenSelecionadoId(ocupado.id);
       return;
@@ -467,11 +480,10 @@ export function TabuleiroBatalha({
     const fichaBase = fichasMesa.find((f) => String(f.id) === String(fichaParaSpawnId));
     if (!fichaBase) {
       return alert(
-        "Selecione uma ficha na aba 'Spawnar' ou clique em '⚡ Gerar Fichas Padrões D&D' primeiro!"
+        "Selecione uma ficha na aba 'Fichas/Spawn' ou clique em '⚡ Gerar Fichas Padrões D&D' primeiro!"
       );
     }
 
-    // Se a ficha ainda não tiver equipamentos/magias carregados do banco, busca completo
     let fichaCompleta = { ...fichaBase };
     if (typeof fichaBase.id === "number" && !fichaBase.equipamento) {
       try {
@@ -482,14 +494,12 @@ export function TabuleiroBatalha({
       }
     }
 
-    // Verifica se já existem outros tokens com o mesmo nome para numerar (ex: Goblin #2)
     const qtdMesmoNome = tokens.filter((t) =>
       t.nome.startsWith(fichaCompleta.nome)
     ).length;
     const nomeExibicao =
       qtdMesmoNome > 0 ? `${fichaCompleta.nome} #${qtdMesmoNome + 1}` : fichaCompleta.nome;
 
-    // Rola Iniciativa D&D 5e: 1d20 + Modificador de Destreza (ou Iniciativa da ficha)
     const modInit =
       fichaCompleta.iniciativa !== undefined && fichaCompleta.iniciativa !== null
         ? Number(fichaCompleta.iniciativa)
@@ -510,6 +520,8 @@ export function TabuleiroBatalha({
       fichaId: fichaCompleta.id,
       nome: nomeExibicao,
       faccao: faccaoSpawn,
+      oculto: spawnOculto,
+      condicoes: [],
       icone: obterIconeFicha(fichaCompleta, faccaoSpawn),
       x,
       y,
@@ -533,10 +545,12 @@ export function TabuleiroBatalha({
       (a, b) => b.iniciativa - a.iniciativa
     );
 
-    const logSpawn = adicionarLog(
-      "spawn",
-      `🎲 ${nomeExibicao} entrou no campo de batalha em (${ String.fromCharCode(65 + x)}${y + 1})! Iniciativa: ${iniciativaTotal} (1d20[${d20Init}] ${modInit >= 0 ? `+${modInit}` : modInit})`
-    );
+    const logSpawn = spawnOculto
+      ? logsCombate[0]
+      : adicionarLog(
+          "spawn",
+          `🎲 ${nomeExibicao} entrou no campo de batalha em (${String.fromCharCode(65 + x)}${y + 1})! Iniciativa: ${iniciativaTotal} (1d20[${d20Init}] ${modInit >= 0 ? `+${modInit}` : modInit})`
+        );
 
     setTokens(novaListaTokens);
     setTokenSelecionadoId(novoToken.id);
@@ -544,15 +558,13 @@ export function TabuleiroBatalha({
 
     await transmitirEstadoGeral({
       tokens: novaListaTokens,
-      logsCombate: [logSpawn, ...logsCombate.slice(0, 49)],
+      logsCombate: spawnOculto ? logsCombate : [logSpawn, ...logsCombate.slice(0, 49)],
     });
   };
 
   // === SINCRONIZAR HP NA FICHA DO BANCO DE DADOS ===
   const sincronizarHpNoBanco = async (tokenAtualizado) => {
     if (!tokenAtualizado?.fichaId || typeof tokenAtualizado.fichaId !== "number") return;
-
-    // Se for um inimigo genérico clonado (ex: Goblin #2), só atualiza no banco se for o principal ou herói
     if (tokenAtualizado.nome.includes("#")) return;
 
     try {
@@ -563,7 +575,6 @@ export function TabuleiroBatalha({
         salvaguardaMorteFalhas: tokenAtualizado.morteFalhas || 0,
       });
     } catch {
-      // Fallback caso o backend em produção só tenha PUT /characters/{id}
       try {
         if (tokenAtualizado.ficha) {
           await api.put(`/characters/${tokenAtualizado.fichaId}`, {
@@ -583,8 +594,14 @@ export function TabuleiroBatalha({
   // === MOVER TOKEN NO TABULEIRO ===
   const moverTokenParaCelula = async (x, y) => {
     if (!tokenSelecionado) return;
+    if (!podeControlarToken(tokenSelecionado)) {
+      return alert("Você só pode mover os seus próprios personagens!");
+    }
     if (tokenSelecionado.hpAtual <= 0) {
       return alert("Personagens caídos (0 PV) não podem se mover!");
+    }
+    if ((tokenSelecionado.condicoes || []).includes("atordoado")) {
+      return alert("Este personagem está Atordoado e não pode se mover!");
     }
 
     const custo = custoMovimentoParaCelula(
@@ -660,8 +677,14 @@ export function TabuleiroBatalha({
   // === EXECUTAR ATAQUE OU CURA SOBRE UM ALVO ===
   const executarAcaoNoAlvo = async (alvoToken) => {
     if (!tokenSelecionado || !acaoSelecionada) return;
+    if (!podeControlarToken(tokenSelecionado)) {
+      return alert("Você não tem permissão para comandar este personagem!");
+    }
     if (tokenSelecionado.hpAtual <= 0) {
       return alert("Este personagem está caído (0 PV) e não pode realizar ações!");
+    }
+    if ((tokenSelecionado.condicoes || []).includes("atordoado")) {
+      return alert("Este personagem está Atordoado e não pode realizar ações!");
     }
 
     const distancia = calcularDistanciaMetros(
@@ -677,7 +700,6 @@ export function TabuleiroBatalha({
       );
     }
 
-    // Verifica consumo de Ação ou Ação Bônus se o combate por turnos estiver ativo
     const consomeBonus = acaoSelecionada.custo === "bonus";
     if (combateIniciado) {
       if (consomeBonus && !tokenSelecionado.acaoBonusDisponivel) {
@@ -692,7 +714,6 @@ export function TabuleiroBatalha({
     let logGerado = null;
 
     if (acaoSelecionada.tipo === "cura") {
-      // === REGRA D&D 5e: CURA ===
       const rolagemCura = rolarExpressaoDados(acaoSelecionada.dano, false);
       const curaTotal = Math.max(1, rolagemCura.total + (acaoSelecionada.bonusDano || 0));
       const hpAnterior = alvoToken.hpAtual;
@@ -730,15 +751,26 @@ export function TabuleiroBatalha({
       const alvoAtualizado = novosTokens.find((t) => t.id === alvoToken.id);
       void sincronizarHpNoBanco(alvoAtualizado);
     } else {
-      // === REGRA D&D 5e: ATAQUE (1d20 + Bônus vs CA) ===
+      // === REGRA D&D 5e: ATAQUE COM CONDIÇÕES AUTOMÁTICAS ===
       const d1 = rolarDado(20);
       const d2 = rolarDado(20);
 
-      // Se o alvo estiver Esquivando, impõe desvantagem (a menos que já tivesse vantagem, anulando)
-      let modoEfetivo = modoRolagemD20;
-      if (alvoToken.esquivando) {
-        modoEfetivo = modoRolagemD20 === "vantagem" ? "normal" : "desvantagem";
-      }
+      const condAtacante = tokenSelecionado.condicoes || [];
+      const condAlvo = alvoToken.condicoes || [];
+
+      let temVantagem =
+        modoRolagemD20 === "vantagem" ||
+        condAlvo.includes("atordoado") ||
+        (condAlvo.includes("caido") && acaoSelecionada.alcanceMetros <= 1.5);
+
+      let temDesvantagem =
+        modoRolagemD20 === "desvantagem" ||
+        alvoToken.esquivando ||
+        condAtacante.includes("envenenado");
+
+      let modoEfetivo = "normal";
+      if (temVantagem && !temDesvantagem) modoEfetivo = "vantagem";
+      else if (temDesvantagem && !temVantagem) modoEfetivo = "desvantagem";
 
       const d20Escolhido =
         modoEfetivo === "vantagem"
@@ -747,16 +779,20 @@ export function TabuleiroBatalha({
             ? Math.min(d1, d2)
             : d1;
 
+      // Bônus de Bênção (+1d4) se o atacante estiver Abençoado
+      const bonusBencao = condAtacante.includes("abencoado") ? rolarDado(4) : 0;
+
       const isCritico = d20Escolhido === 20;
       const isFalhaCritica = d20Escolhido === 1;
       const bonusAtaque = Number(acaoSelecionada.bonusAtaque || 0);
-      const totalAtaque = d20Escolhido + bonusAtaque;
+      const totalAtaque = d20Escolhido + bonusAtaque + bonusBencao;
       const acertou = isCritico || (!isFalhaCritica && totalAtaque >= alvoToken.ca);
 
       const textoDadosD20 =
         modoEfetivo !== "normal"
           ? `2d20(${modoEfetivo.toUpperCase()})[${d1}, ${d2} → ${d20Escolhido}]`
           : `1d20[${d20Escolhido}]`;
+      const strBencao = bonusBencao > 0 ? ` + 1d4(Bênção)[${bonusBencao}]` : "";
 
       if (acertou) {
         const rolagemDano = rolarExpressaoDados(acaoSelecionada.dano, isCritico);
@@ -791,7 +827,7 @@ export function TabuleiroBatalha({
 
         logGerado = adicionarLog(
           "ataque",
-          `⚔️ ${tokenSelecionado.nome} usou "${acaoSelecionada.nome}" em ${alvoToken.nome}: ${textoDadosD20} ${strBonusAtaque} = ${totalAtaque} vs CA ${alvoToken.ca}${tagCritico} Causou ${danoTotal} de dano (${rolagemDano.formula}[${rolagemDano.dados.join(",")}]${strBonusDano}). PV de ${alvoToken.nome}: ${novoHp}/${alvoToken.hpMax}${tagCaido}`
+          `⚔️ ${tokenSelecionado.nome} usou "${acaoSelecionada.nome}" em ${alvoToken.nome}: ${textoDadosD20} ${strBonusAtaque}${strBencao} = ${totalAtaque} vs CA ${alvoToken.ca}${tagCritico} Causou ${danoTotal} de dano (${rolagemDano.formula}[${rolagemDano.dados.join(",")}]${strBonusDano}). PV de ${alvoToken.nome}: ${novoHp}/${alvoToken.hpMax}${tagCaido}`
         );
 
         const alvoAtualizado = novosTokens.find((t) => t.id === alvoToken.id);
@@ -813,7 +849,7 @@ export function TabuleiroBatalha({
 
         logGerado = adicionarLog(
           "erro",
-          `🛡️ ${tokenSelecionado.nome} atacou ${alvoToken.nome} com "${acaoSelecionada.nome}": ${textoDadosD20} ${strBonusAtaque} = ${totalAtaque} vs CA ${alvoToken.ca}${tagErro}`
+          `🛡️ ${tokenSelecionado.nome} atacou ${alvoToken.nome} com "${acaoSelecionada.nome}": ${textoDadosD20} ${strBonusAtaque}${strBencao} = ${totalAtaque} vs CA ${alvoToken.ca}${tagErro}`
         );
       }
     }
@@ -839,9 +875,125 @@ export function TabuleiroBatalha({
     });
   };
 
+  // === CONDIÇÕES D&D, VISIBILIDADE E DESCANSO ===
+  const alternarCondicaoToken = async (condId) => {
+    if (!tokenSelecionado) return;
+    const atuais = tokenSelecionado.condicoes || [];
+    const novas = atuais.includes(condId)
+      ? atuais.filter((c) => c !== condId)
+      : [...atuais, condId];
+
+    const novosTokens = tokens.map((t) =>
+      t.id === tokenSelecionado.id ? { ...t, condicoes: novas } : t
+    );
+
+    const objCond = CONDICOES_DND.find((c) => c.id === condId);
+    const log = adicionarLog(
+      "sistema",
+      `${objCond?.icone || "✨"} ${tokenSelecionado.nome} ${
+        novas.includes(condId) ? "recebeu" : "removeu"
+      } a condição: ${objCond?.nome || condId}`
+    );
+
+    setTokens(novosTokens);
+    await transmitirEstadoGeral({
+      tokens: novosTokens,
+      logsCombate: [log, ...logsCombate.slice(0, 49)],
+    });
+  };
+
+  const alternarVisibilidadeToken = async () => {
+    if (!isMestre || !tokenSelecionado) return;
+    const novoOculto = !tokenSelecionado.oculto;
+    const novosTokens = tokens.map((t) =>
+      t.id === tokenSelecionado.id ? { ...t, oculto: novoOculto } : t
+    );
+
+    const log = !novoOculto
+      ? adicionarLog(
+          "spawn",
+          `👁️ EMBOSCADA! ${tokenSelecionado.nome} revelou-se das sombras!`
+        )
+      : logsCombate[0];
+
+    setTokens(novosTokens);
+    await transmitirEstadoGeral({
+      tokens: novosTokens,
+      logsCombate: !novoOculto ? [log, ...logsCombate.slice(0, 49)] : logsCombate,
+    });
+  };
+
+  const realizarDescansoCurto = async () => {
+    if (!isMestre) return;
+    const novosTokens = tokens.map((t) => {
+      if (t.faccao !== "heroi") return t;
+      const modCon = calcularModificador(t.ficha?.constituicao ?? 12);
+      const cura = Math.max(1, rolarDado(8) + modCon);
+      const novoHp = Math.min(t.hpMax, t.hpAtual + cura);
+      const atualizado = {
+        ...t,
+        hpAtual: novoHp,
+        ficha: t.ficha ? { ...t.ficha, pontosDeVidaAtuais: novoHp } : t.ficha,
+      };
+      void sincronizarHpNoBanco(atualizado);
+      return atualizado;
+    });
+
+    const log = adicionarLog(
+      "cura",
+      "⛺ O grupo realizou um Descanso Curto (Dados de Vida gastos para recuperar PV)!"
+    );
+    setTokens(novosTokens);
+    await transmitirEstadoGeral({
+      tokens: novosTokens,
+      logsCombate: [log, ...logsCombate.slice(0, 49)],
+    });
+  };
+
+  const realizarDescansoLongo = async () => {
+    if (!isMestre) return;
+    try {
+      await api.post(`/characters/mesa/${tenantId}/descanso-longo`);
+    } catch {
+      // continua localmente e por token
+    }
+
+    const novosTokens = tokens.map((t) => {
+      if (t.faccao !== "heroi") return t;
+      const atualizado = {
+        ...t,
+        hpAtual: t.hpMax,
+        hpTemp: 0,
+        condicoes: [],
+        esquivando: false,
+        morteSucessos: 0,
+        morteFalhas: 0,
+        movimentoRestante: t.deslocamentoMax,
+        acaoDisponivel: true,
+        acaoBonusDisponivel: true,
+        ficha: t.ficha ? { ...t.ficha, pontosDeVidaAtuais: t.hpMax } : t.ficha,
+      };
+      void sincronizarHpNoBanco(atualizado);
+      return atualizado;
+    });
+
+    const log = adicionarLog(
+      "cura",
+      "🌙 O grupo realizou um Descanso Longo! Todos os heróis recuperaram 100% dos PV e removeram condições negativas."
+    );
+    setTokens(novosTokens);
+    await transmitirEstadoGeral({
+      tokens: novosTokens,
+      logsCombate: [log, ...logsCombate.slice(0, 49)],
+    });
+  };
+
   // === AÇÕES TÁTICAS DE TURNO (DISPARADA, ESQUIVAR, SALVAGUARDA CONTRA A MORTE) ===
   const usarDisparada = async () => {
     if (!tokenSelecionado) return;
+    if (!podeControlarToken(tokenSelecionado)) {
+      return alert("Você só pode comandar seu próprio personagem!");
+    }
     if (combateIniciado && !tokenSelecionado.acaoDisponivel) {
       return alert("Você já usou sua Ação Principal neste turno!");
     }
@@ -870,6 +1022,9 @@ export function TabuleiroBatalha({
 
   const usarEsquivar = async () => {
     if (!tokenSelecionado) return;
+    if (!podeControlarToken(tokenSelecionado)) {
+      return alert("Você só pode comandar seu próprio personagem!");
+    }
     if (combateIniciado && !tokenSelecionado.acaoDisponivel) {
       return alert("Você já usou sua Ação Principal neste turno!");
     }
@@ -990,7 +1145,6 @@ export function TabuleiroBatalha({
     const novaRodada = proximoIdx === 0 ? rodada + 1 : rodada;
     const tokenQueVaiAgir = tokens[proximoIdx];
 
-    // Restaura movimento, ação, ação bônus e limpa esquiva do personagem que inicia seu turno
     const novosTokens = tokens.map((t, idx) =>
       idx === proximoIdx
         ? {
@@ -1037,9 +1191,7 @@ export function TabuleiroBatalha({
     });
   };
 
-  // === CLIQUE EM UMA CÉLULA DO TABULEIRO ===
   const handleCellClick = async (x, y) => {
-    // 1. Modo de edição de Props do Cenário (Mestre)
     if (isMestre && abaLateral === "cenario" && modoInteracao === "prop") {
       let novosProps = [...(cenarioAtual.props || [])];
       if (modoBorrachaProp) {
@@ -1072,7 +1224,6 @@ export function TabuleiroBatalha({
       return;
     }
 
-    // 2. Modo de Spawn de Personagem (Mestre)
     if (isMestre && modoInteracao === "spawn") {
       await spawnarPersonagemNaCelula(x, y);
       return;
@@ -1080,7 +1231,6 @@ export function TabuleiroBatalha({
 
     const tokenNoLocal = tokenNaCelula(x, y);
 
-    // 3. Modo de Ação (Ataque ou Cura)
     if (modoInteracao === "acao" && acaoSelecionada) {
       if (tokenNoLocal) {
         await executarAcaoNoAlvo(tokenNoLocal);
@@ -1091,7 +1241,6 @@ export function TabuleiroBatalha({
       return;
     }
 
-    // 4. Se clicou em um token existente, seleciona-o
     if (tokenNoLocal) {
       setTokenSelecionadoId(tokenNoLocal.id);
       setModoInteracao("mover");
@@ -1099,7 +1248,6 @@ export function TabuleiroBatalha({
       return;
     }
 
-    // 5. Se há um token selecionado e clicou numa célula vazia, move o token
     if (tokenSelecionado && modoInteracao === "mover") {
       await moverTokenParaCelula(x, y);
     }
@@ -1109,7 +1257,6 @@ export function TabuleiroBatalha({
 
   return (
     <div className="w-screen h-screen bg-zinc-950 text-zinc-100 flex flex-col overflow-hidden select-none z-40">
-      {/* MODAL DE FICHA COMPLETA */}
       <FichaModal
         isOpen={fichaModalAberta}
         onClose={() => setFichaModalAberta(false)}
@@ -1141,13 +1288,13 @@ export function TabuleiroBatalha({
 
         {/* TRACKER DE INICIATIVA CENTRAL */}
         <div className="flex items-center gap-2 overflow-x-auto max-w-2xl py-0.5">
-          {tokens.length === 0 ? (
+          {tokensVisiveis.length === 0 ? (
             <span className="text-xs text-zinc-500 italic">
-              Nenhum combatente no grid ainda...
+              Nenhum combatente visível no grid...
             </span>
           ) : (
-            tokens.map((t, idx) => {
-              const isVez = combateIniciado && idx === turnoIndex % tokens.length;
+            tokensVisiveis.map((t) => {
+              const isVez = combateIniciado && tokenDoTurno?.id === t.id;
               const isSel = t.id === tokenSelecionadoId;
               return (
                 <button
@@ -1163,10 +1310,13 @@ export function TabuleiroBatalha({
                       : isSel
                         ? "bg-zinc-800 border-zinc-400 text-white"
                         : "bg-zinc-950/80 border-zinc-800 text-zinc-400 hover:border-zinc-700"
-                  } ${t.hpAtual <= 0 ? "opacity-50 line-through" : ""}`}
+                  } ${t.hpAtual <= 0 ? "opacity-50 line-through" : ""} ${
+                    t.oculto ? "border-dashed border-purple-500 opacity-75" : ""
+                  }`}
                 >
                   <span>{t.icone}</span>
                   <span className="max-w-[90px] truncate">{t.nome}</span>
+                  {t.oculto && <span title="Oculto para jogadores">👻</span>}
                   <span className="text-[10px] font-mono bg-black/50 px-1 rounded text-amber-400">
                     🎲{t.iniciativa}
                   </span>
@@ -1183,8 +1333,27 @@ export function TabuleiroBatalha({
           )}
         </div>
 
-        {/* CONTROLES DE RODADA E TURNO */}
+        {/* CONTROLES DE RODADA, TURNO E DESCANSO */}
         <div className="flex items-center gap-2">
+          {isMestre && (
+            <>
+              <button
+                onClick={realizarDescansoCurto}
+                title="Recuperar PV com Dados de Vida"
+                className="bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-zinc-200 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-colors"
+              >
+                ⛺ Descanso Curto
+              </button>
+              <button
+                onClick={realizarDescansoLongo}
+                title="Restaurar 100% dos PV e limpar condições dos heróis"
+                className="bg-indigo-950 hover:bg-indigo-900 border border-indigo-700 text-indigo-200 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-colors"
+              >
+                🌙 Descanso Longo
+              </button>
+            </>
+          )}
+
           {combateIniciado && (
             <div className="bg-red-950/60 border border-red-800/70 px-3 py-1 rounded-lg text-xs font-bold text-red-300">
               Rodada {rodada}
@@ -1196,7 +1365,7 @@ export function TabuleiroBatalha({
               onClick={iniciarOuReiniciarCombate}
               className="bg-amber-700 hover:bg-amber-600 text-white px-3 py-1.5 rounded-lg text-xs font-bold transition-colors shadow"
             >
-              🎲 {combateIniciado ? "Rerrolar Iniciativa" : "Rolar Iniciativa"}
+              🎲 {combateIniciado ? "Rerrolar" : "Rolar Iniciativa"}
             </button>
           )}
 
@@ -1211,11 +1380,10 @@ export function TabuleiroBatalha({
         </div>
       </header>
 
-      {/* CORPO PRINCIPAL: TABULEIRO + BARRA LATERAL TÁTICA */}
+      {/* CORPO PRINCIPAL */}
       <div className="flex-1 flex overflow-hidden">
         {/* ÁREA DO GRID QUADRICULADO */}
         <div className="flex-1 relative bg-zinc-950 flex flex-col items-center justify-center p-4 overflow-auto">
-          {/* BANNER DE INSTRUÇÃO DO MODO ATIVO */}
           <div className="mb-2 flex items-center gap-3 bg-zinc-900/90 border border-zinc-800 px-4 py-1.5 rounded-full text-xs shadow-md">
             {modoInteracao === "spawn" && (
               <span className="text-emerald-400 font-bold">
@@ -1251,12 +1419,11 @@ export function TabuleiroBatalha({
               <span className="text-zinc-300">
                 {tokenSelecionado
                   ? `Selecionado: ${tokenSelecionado.icone} ${tokenSelecionado.nome} — Clique em um quadrado azul (${tokenSelecionado.movimentoRestante}m restantes) para mover ou escolha uma Ação ao lado.`
-                  : "Clique em um personagem no grid para selecioná-lo ou use a aba 'Spawnar' para adicionar combatentes."}
+                  : "Clique em um personagem no grid para selecioná-lo."}
               </span>
             )}
           </div>
 
-          {/* CONTAINER DO TABULEIRO */}
           <div
             className={`relative rounded-xl border-2 border-zinc-700 shadow-[0_0_50px_rgba(0,0,0,0.85)] overflow-hidden ${temaVisual.bgGrid}`}
             style={{
@@ -1267,7 +1434,6 @@ export function TabuleiroBatalha({
               backgroundPosition: "center",
             }}
           >
-            {/* Camada de contraste sutil quando há imagem de fundo */}
             {cenarioAtual.fundoUrl && (
               <div className="absolute inset-0 bg-black/35 pointer-events-none" />
             )}
@@ -1287,12 +1453,12 @@ export function TabuleiroBatalha({
                   const isTokenVez =
                     tok && tokenDoTurno && tok.id === tokenDoTurno.id;
 
-                  // Verifica se a célula está no alcance de movimento
                   let alcançavelMovimento = false;
                   let custoCelula = 0;
                   if (
                     modoInteracao === "mover" &&
                     tokenSelecionado &&
+                    podeControlarToken(tokenSelecionado) &&
                     !tok &&
                     tokenSelecionado.hpAtual > 0
                   ) {
@@ -1309,7 +1475,6 @@ export function TabuleiroBatalha({
                       custoCelula > 0 && custoCelula <= limiteMov;
                   }
 
-                  // Verifica se a célula está no alcance da ação (ataque ou cura)
                   let dentroAlcanceAcao = false;
                   if (
                     modoInteracao === "acao" &&
@@ -1351,19 +1516,16 @@ export function TabuleiroBatalha({
                             : temaVisual.cellBg
                       }`}
                     >
-                      {/* Coordenada discreta no canto */}
                       <span className="absolute top-0.5 left-1 text-[8px] text-zinc-500/60 font-mono pointer-events-none">
                         {coordLabel}
                       </span>
 
-                      {/* Custo em metros ao passar o mouse em célula alcançável */}
                       {alcançavelMovimento && (
                         <span className="absolute bottom-0.5 right-1 text-[8px] text-sky-300/80 font-mono pointer-events-none">
                           {custoCelula}m
                         </span>
                       )}
 
-                      {/* PROP DO CENÁRIO */}
                       {prop && (
                         <div
                           className={`w-9 h-9 rounded-md border flex items-center justify-center text-lg shadow-inner ${
@@ -1374,7 +1536,6 @@ export function TabuleiroBatalha({
                         </div>
                       )}
 
-                      {/* TOKEN DO PERSONAGEM */}
                       {tok && (
                         <div
                           className={`relative z-20 w-11 h-11 rounded-full flex flex-col items-center justify-center shadow-lg transition-transform ${
@@ -1391,7 +1552,9 @@ export function TabuleiroBatalha({
                             isTokenVez
                               ? "ring-4 ring-amber-400/80"
                               : ""
-                          } ${tok.hpAtual <= 0 ? "grayscale opacity-60" : ""}`}
+                          } ${tok.hpAtual <= 0 ? "grayscale opacity-60" : ""} ${
+                            tok.oculto ? "opacity-60 border-dashed" : ""
+                          }`}
                         >
                           <span className="text-lg leading-none">
                             {tok.hpAtual <= 0 ? "💀" : tok.icone}
@@ -1400,7 +1563,7 @@ export function TabuleiroBatalha({
                             {tok.nome.split(" ")[0]}
                           </span>
 
-                          {/* Barra de Vida Miniatura sobre o Token */}
+                          {/* Barra de Vida */}
                           <div className="absolute -top-1.5 w-10 h-1.5 bg-zinc-950 rounded-full overflow-hidden border border-zinc-700">
                             <div
                               className={`h-full transition-all ${
@@ -1419,15 +1582,31 @@ export function TabuleiroBatalha({
                             />
                           </div>
 
-                          {/* Indicador de Esquiva ativa */}
-                          {tok.esquivando && (
-                            <span
-                              title="Esquivando (Ataques contra têm Desvantagem)"
-                              className="absolute -bottom-1 -right-1 text-[10px] bg-sky-900 border border-sky-400 rounded-full px-0.5"
-                            >
-                              🛡️
-                            </span>
-                          )}
+                          {/* Badges de Condições, Esquiva e Furtividade */}
+                          <div className="absolute -bottom-1.5 flex items-center gap-0.5">
+                            {tok.esquivando && (
+                              <span className="text-[9px] bg-sky-900 border border-sky-400 rounded-full px-0.5">
+                                🛡️
+                              </span>
+                            )}
+                            {tok.oculto && (
+                              <span className="text-[9px] bg-purple-900 border border-purple-400 rounded-full px-0.5">
+                                👻
+                              </span>
+                            )}
+                            {(tok.condicoes || []).map((cid) => {
+                              const cObj = CONDICOES_DND.find((c) => c.id === cid);
+                              return cObj ? (
+                                <span
+                                  key={cid}
+                                  title={cObj.nome}
+                                  className="text-[9px] bg-zinc-900 border border-zinc-600 rounded-full px-0.5"
+                                >
+                                  {cObj.icone}
+                                </span>
+                              ) : null;
+                            })}
+                          </div>
                         </div>
                       )}
                     </div>
@@ -1438,9 +1617,8 @@ export function TabuleiroBatalha({
           </div>
         </div>
 
-        {/* BARRA LATERAL TÁTICA (COMBATE, SPAWN DE FICHAS, EDITOR DE CENÁRIOS E LOGS) */}
+        {/* BARRA LATERAL TÁTICA */}
         <aside className="w-96 bg-zinc-900 border-l border-zinc-800 flex flex-col shrink-0">
-          {/* ABAS DE NAVEGAÇÃO LATERAL */}
           <div className="grid grid-cols-3 border-b border-zinc-800 bg-zinc-950/60">
             <button
               onClick={() => {
@@ -1483,11 +1661,7 @@ export function TabuleiroBatalha({
             </button>
           </div>
 
-          {/* CONTEÚDO DA ABA ATIVA */}
           <div className="flex-1 overflow-y-auto p-4 space-y-4">
-            {/* ============================================================ */}
-            {/* ABA 1: AÇÕES DE COMBATE DO PERSONAGEM SELECIONADO             */}
-            {/* ============================================================ */}
             {abaLateral === "combate" && (
               <>
                 {!tokenSelecionado ? (
@@ -1509,7 +1683,6 @@ export function TabuleiroBatalha({
                   </div>
                 ) : (
                   <div className="space-y-4">
-                    {/* CARD RESUMO DO PERSONAGEM SELECIONADO */}
                     <div className="bg-zinc-950 border border-zinc-800 rounded-xl p-3.5 space-y-3">
                       <div className="flex justify-between items-start gap-2">
                         <div>
@@ -1527,6 +1700,23 @@ export function TabuleiroBatalha({
                         </div>
 
                         <div className="flex gap-1">
+                          {isMestre && (
+                            <button
+                              onClick={alternarVisibilidadeToken}
+                              title={
+                                tokenSelecionado.oculto
+                                  ? "Revelar para os Jogadores"
+                                  : "Ocultar dos Jogadores (Furtividade)"
+                              }
+                              className={`px-2 py-1 rounded text-[11px] border ${
+                                tokenSelecionado.oculto
+                                  ? "bg-purple-900 border-purple-400 text-purple-100"
+                                  : "bg-zinc-800 border-zinc-700 text-zinc-300"
+                              }`}
+                            >
+                              {tokenSelecionado.oculto ? "👁️ Revelar" : "👻"}
+                            </button>
+                          )}
                           <button
                             onClick={() => {
                               setFichaModalDados({
@@ -1539,7 +1729,6 @@ export function TabuleiroBatalha({
                               setFichaModalAberta(true);
                             }}
                             className="bg-zinc-800 hover:bg-zinc-700 text-zinc-200 px-2.5 py-1 rounded text-[11px] font-semibold border border-zinc-700"
-                            title="Abrir Ficha Completa D&D"
                           >
                             📜 Ficha
                           </button>
@@ -1547,7 +1736,6 @@ export function TabuleiroBatalha({
                             <button
                               onClick={() => removerToken(tokenSelecionado.id)}
                               className="bg-red-950/60 hover:bg-red-900 text-red-300 px-2 py-1 rounded text-[11px] border border-red-800/60"
-                              title="Remover do Tabuleiro"
                             >
                               🗑️
                             </button>
@@ -1555,7 +1743,6 @@ export function TabuleiroBatalha({
                         </div>
                       </div>
 
-                      {/* STATUS VITAIS (PV, CA, MOVIMENTO, INICIATIVA) */}
                       <div className="grid grid-cols-4 gap-2 text-center">
                         <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-1.5">
                           <span className="block text-[9px] text-zinc-500 uppercase">
@@ -1591,7 +1778,34 @@ export function TabuleiroBatalha({
                         </div>
                       </div>
 
-                      {/* RECURSOS DO TURNO ATUAL */}
+                      {/* CONDIÇÕES DE STATUS D&D 5e */}
+                      <div>
+                        <span className="block text-[9px] text-zinc-500 uppercase font-bold mb-1">
+                          Condições de Status D&D 5e:
+                        </span>
+                        <div className="flex flex-wrap gap-1">
+                          {CONDICOES_DND.map((c) => {
+                            const ativa = (
+                              tokenSelecionado.condicoes || []
+                            ).includes(c.id);
+                            return (
+                              <button
+                                key={c.id}
+                                onClick={() => void alternarCondicaoToken(c.id)}
+                                title={c.desc}
+                                className={`px-2 py-0.5 rounded text-[10px] font-semibold border transition-colors ${
+                                  ativa
+                                    ? "bg-purple-900/80 border-purple-400 text-white"
+                                    : "bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-zinc-200"
+                                }`}
+                              >
+                                {c.icone} {c.nome}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+
                       {combateIniciado && (
                         <div className="flex items-center justify-between bg-zinc-900/70 px-3 py-1.5 rounded-lg border border-zinc-800 text-[11px]">
                           <span
@@ -1616,147 +1830,151 @@ export function TabuleiroBatalha({
                       )}
                     </div>
 
-                    {/* SELETOR DE VANTAGEM / NORMAL / DESVANTAGEM (D&D 5e) */}
-                    <div>
-                      <label className="block text-[10px] text-zinc-400 uppercase font-bold mb-1.5 tracking-wider">
-                        Modo de Rolagem (1d20)
-                      </label>
-                      <div className="grid grid-cols-3 gap-1.5 bg-zinc-950 p-1 rounded-lg border border-zinc-800">
-                        {[
-                          { id: "desvantagem", label: "Desvantagem" },
-                          { id: "normal", label: "Normal" },
-                          { id: "vantagem", label: "Vantagem" },
-                        ].map((m) => (
-                          <button
-                            key={m.id}
-                            onClick={() => setModoRolagemD20(m.id)}
-                            className={`py-1 rounded text-[11px] font-bold transition-colors ${
-                              modoRolagemD20 === m.id
-                                ? m.id === "vantagem"
-                                  ? "bg-emerald-700 text-white"
-                                  : m.id === "desvantagem"
-                                    ? "bg-red-800 text-white"
-                                    : "bg-zinc-700 text-white"
-                                : "text-zinc-400 hover:text-white"
-                            }`}
-                          >
-                            {m.label}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* SALVAGUARDA CONTRA A MORTE QUANDO EM 0 PV */}
-                    {tokenSelecionado.hpAtual <= 0 ? (
-                      <div className="bg-red-950/40 border border-red-800 rounded-xl p-4 text-center space-y-3">
-                        <h4 className="text-red-400 font-bold text-sm uppercase">
-                          💀 Personagem Caído (0 PV)
-                        </h4>
-                        <p className="text-xs text-zinc-300">
-                          Sucessos: {tokenSelecionado.morteSucessos || 0}/3 • Falhas:{" "}
-                          {tokenSelecionado.morteFalhas || 0}/3
-                        </p>
-                        <button
-                          onClick={rolarSalvaguardaMorte}
-                          className="w-full bg-red-700 hover:bg-red-600 text-white font-bold py-2 rounded-lg text-xs shadow"
-                        >
-                          🎲 Rolar Salvaguarda Contra a Morte (1d20)
-                        </button>
+                    {!podeControlarToken(tokenSelecionado) ? (
+                      <div className="bg-zinc-950 border border-zinc-800 rounded-xl p-4 text-center text-xs text-zinc-400">
+                        🔒 Este combatente é controlado pelo Mestre ou por outro jogador.
                       </div>
                     ) : (
                       <>
-                        {/* LISTA DE ATAQUES, MAGIAS E CURAS DA FICHA */}
-                        <div className="space-y-2">
-                          <h4 className="text-[11px] font-bold uppercase text-zinc-400 tracking-wider">
-                            ⚔️ Ataques, Magias & Curas da Ficha
-                          </h4>
-                          {acoesDisponiveis.map((acao) => {
-                            const ativa = acaoSelecionada?.id === acao.id;
-                            return (
+                        <div>
+                          <label className="block text-[10px] text-zinc-400 uppercase font-bold mb-1.5 tracking-wider">
+                            Modo de Rolagem (1d20)
+                          </label>
+                          <div className="grid grid-cols-3 gap-1.5 bg-zinc-950 p-1 rounded-lg border border-zinc-800">
+                            {[
+                              { id: "desvantagem", label: "Desvantagem" },
+                              { id: "normal", label: "Normal" },
+                              { id: "vantagem", label: "Vantagem" },
+                            ].map((m) => (
                               <button
-                                key={acao.id}
-                                onClick={() => {
-                                  if (ativa) {
-                                    setAcaoSelecionada(null);
-                                    setModoInteracao("mover");
-                                  } else {
-                                    setAcaoSelecionada(acao);
-                                    setModoInteracao("acao");
-                                  }
-                                }}
-                                className={`w-full text-left p-2.5 rounded-xl border transition-all flex items-center justify-between gap-2 ${
-                                  ativa
-                                    ? acao.tipo === "cura"
-                                      ? "bg-emerald-950/80 border-emerald-400 ring-2 ring-emerald-500/30"
-                                      : "bg-red-950/80 border-red-400 ring-2 ring-red-500/30"
-                                    : "bg-zinc-950/90 hover:bg-zinc-800/80 border-zinc-800"
+                                key={m.id}
+                                onClick={() => setModoRolagemD20(m.id)}
+                                className={`py-1 rounded text-[11px] font-bold transition-colors ${
+                                  modoRolagemD20 === m.id
+                                    ? m.id === "vantagem"
+                                      ? "bg-emerald-700 text-white"
+                                      : m.id === "desvantagem"
+                                        ? "bg-red-800 text-white"
+                                        : "bg-zinc-700 text-white"
+                                    : "text-zinc-400 hover:text-white"
                                 }`}
                               >
-                                <div className="min-w-0">
-                                  <div className="flex items-center gap-1.5">
-                                    <span>{acao.icone}</span>
-                                    <span className="font-bold text-xs text-white truncate">
-                                      {acao.nome}
-                                    </span>
-                                    <span className="text-[10px] px-1.5 py-0.2 rounded bg-zinc-800 text-zinc-300 font-mono">
-                                      {acao.alcanceMetros}m
-                                    </span>
-                                  </div>
-                                  <p className="text-[10px] text-zinc-400 truncate mt-0.5">
-                                    {acao.descricao}
-                                  </p>
-                                </div>
-
-                                <div className="text-right shrink-0">
-                                  {acao.tipo === "ataque" ? (
-                                    <>
-                                      <span className="block text-[10px] text-amber-400 font-mono font-bold">
-                                        Acerto{" "}
-                                        {acao.bonusAtaque >= 0
-                                          ? `+${acao.bonusAtaque}`
-                                          : acao.bonusAtaque}
-                                      </span>
-                                      <span className="block text-xs text-red-400 font-mono font-bold">
-                                        {acao.dano}
-                                        {acao.bonusDano > 0
-                                          ? `+${acao.bonusDano}`
-                                          : acao.bonusDano < 0
-                                            ? acao.bonusDano
-                                            : ""}
-                                      </span>
-                                    </>
-                                  ) : (
-                                    <span className="block text-xs text-emerald-400 font-mono font-bold">
-                                      +{acao.dano}
-                                      {acao.bonusDano > 0 ? `+${acao.bonusDano}` : ""} PV
-                                    </span>
-                                  )}
-                                </div>
+                                {m.label}
                               </button>
-                            );
-                          })}
-                        </div>
-
-                        {/* MANOBRAS TÁTICAS D&D 5e */}
-                        <div className="pt-2 border-t border-zinc-800">
-                          <h4 className="text-[10px] font-bold uppercase text-zinc-500 mb-2 tracking-wider">
-                            Manobras Táticas de Combate
-                          </h4>
-                          <div className="grid grid-cols-2 gap-2">
-                            <button
-                              onClick={usarDisparada}
-                              className="bg-zinc-950 hover:bg-zinc-800 border border-zinc-800 text-sky-300 py-2 px-3 rounded-lg text-xs font-bold transition-colors"
-                            >
-                              🏃 Disparada (+Mov)
-                            </button>
-                            <button
-                              onClick={usarEsquivar}
-                              className="bg-zinc-950 hover:bg-zinc-800 border border-zinc-800 text-amber-300 py-2 px-3 rounded-lg text-xs font-bold transition-colors"
-                            >
-                              🛡️ Esquivar (Dodge)
-                            </button>
+                            ))}
                           </div>
                         </div>
+
+                        {tokenSelecionado.hpAtual <= 0 ? (
+                          <div className="bg-red-950/40 border border-red-800 rounded-xl p-4 text-center space-y-3">
+                            <h4 className="text-red-400 font-bold text-sm uppercase">
+                              💀 Personagem Caído (0 PV)
+                            </h4>
+                            <p className="text-xs text-zinc-300">
+                              Sucessos: {tokenSelecionado.morteSucessos || 0}/3 • Falhas:{" "}
+                              {tokenSelecionado.morteFalhas || 0}/3
+                            </p>
+                            <button
+                              onClick={rolarSalvaguardaMorte}
+                              className="w-full bg-red-700 hover:bg-red-600 text-white font-bold py-2 rounded-lg text-xs shadow"
+                            >
+                              🎲 Rolar Salvaguarda Contra a Morte (1d20)
+                            </button>
+                          </div>
+                        ) : (
+                          <>
+                            <div className="space-y-2">
+                              <h4 className="text-[11px] font-bold uppercase text-zinc-400 tracking-wider">
+                                ⚔️ Ataques, Magias & Curas da Ficha
+                              </h4>
+                              {acoesDisponiveis.map((acao) => {
+                                const ativa = acaoSelecionada?.id === acao.id;
+                                return (
+                                  <button
+                                    key={acao.id}
+                                    onClick={() => {
+                                      if (ativa) {
+                                        setAcaoSelecionada(null);
+                                        setModoInteracao("mover");
+                                      } else {
+                                        setAcaoSelecionada(acao);
+                                        setModoInteracao("acao");
+                                      }
+                                    }}
+                                    className={`w-full text-left p-2.5 rounded-xl border transition-all flex items-center justify-between gap-2 ${
+                                      ativa
+                                        ? acao.tipo === "cura"
+                                          ? "bg-emerald-950/80 border-emerald-400 ring-2 ring-emerald-500/30"
+                                          : "bg-red-950/80 border-red-400 ring-2 ring-red-500/30"
+                                        : "bg-zinc-950/90 hover:bg-zinc-800/80 border-zinc-800"
+                                    }`}
+                                  >
+                                    <div className="min-w-0">
+                                      <div className="flex items-center gap-1.5">
+                                        <span>{acao.icone}</span>
+                                        <span className="font-bold text-xs text-white truncate">
+                                          {acao.nome}
+                                        </span>
+                                        <span className="text-[10px] px-1.5 py-0.2 rounded bg-zinc-800 text-zinc-300 font-mono">
+                                          {acao.alcanceMetros}m
+                                        </span>
+                                      </div>
+                                      <p className="text-[10px] text-zinc-400 truncate mt-0.5">
+                                        {acao.descricao}
+                                      </p>
+                                    </div>
+
+                                    <div className="text-right shrink-0">
+                                      {acao.tipo === "ataque" ? (
+                                        <>
+                                          <span className="block text-[10px] text-amber-400 font-mono font-bold">
+                                            Acerto{" "}
+                                            {acao.bonusAtaque >= 0
+                                              ? `+${acao.bonusAtaque}`
+                                              : acao.bonusAtaque}
+                                          </span>
+                                          <span className="block text-xs text-red-400 font-mono font-bold">
+                                            {acao.dano}
+                                            {acao.bonusDano > 0
+                                              ? `+${acao.bonusDano}`
+                                              : acao.bonusDano < 0
+                                                ? acao.bonusDano
+                                                : ""}
+                                          </span>
+                                        </>
+                                      ) : (
+                                        <span className="block text-xs text-emerald-400 font-mono font-bold">
+                                          +{acao.dano}
+                                          {acao.bonusDano > 0 ? `+${acao.bonusDano}` : ""} PV
+                                        </span>
+                                      )}
+                                    </div>
+                                  </button>
+                                );
+                              })}
+                            </div>
+
+                            <div className="pt-2 border-t border-zinc-800">
+                              <h4 className="text-[10px] font-bold uppercase text-zinc-500 mb-2 tracking-wider">
+                                Manobras Táticas de Combate
+                              </h4>
+                              <div className="grid grid-cols-2 gap-2">
+                                <button
+                                  onClick={usarDisparada}
+                                  className="bg-zinc-950 hover:bg-zinc-800 border border-zinc-800 text-sky-300 py-2 px-3 rounded-lg text-xs font-bold transition-colors"
+                                >
+                                  🏃 Disparada (+Mov)
+                                </button>
+                                <button
+                                  onClick={usarEsquivar}
+                                  className="bg-zinc-950 hover:bg-zinc-800 border border-zinc-800 text-amber-300 py-2 px-3 rounded-lg text-xs font-bold transition-colors"
+                                >
+                                  🛡️ Esquivar (Dodge)
+                                </button>
+                              </div>
+                            </div>
+                          </>
+                        )}
                       </>
                     )}
                   </div>
@@ -1764,9 +1982,6 @@ export function TabuleiroBatalha({
               </>
             )}
 
-            {/* ============================================================ */}
-            {/* ABA 2: FICHAS E SPAWN DE PERSONAGENS NO TABULEIRO             */}
-            {/* ============================================================ */}
             {abaLateral === "spawn" && (
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
@@ -1806,6 +2021,17 @@ export function TabuleiroBatalha({
                         </button>
                       ))}
                     </div>
+
+                    <label className="flex items-center gap-2 text-xs text-purple-300 cursor-pointer pt-1">
+                      <input
+                        type="checkbox"
+                        checked={spawnOculto}
+                        onChange={(e) => setSpawnOculto(e.target.checked)}
+                        className="accent-purple-500"
+                      />
+                      👻 Spawnar Oculto dos Jogadores (Emboscada)
+                    </label>
+
                     <p className="text-[11px] text-zinc-400">
                       Selecione uma ficha abaixo e depois <strong>clique em qualquer quadrado do grid</strong> para spawnar o personagem!
                     </p>
@@ -1884,9 +2110,6 @@ export function TabuleiroBatalha({
               </div>
             )}
 
-            {/* ============================================================ */}
-            {/* ABA 3: EDITOR DE CENÁRIOS E PROPS (MESTRE)                    */}
-            {/* ============================================================ */}
             {abaLateral === "cenario" && (
               <div className="space-y-4">
                 {!isMestre ? (
@@ -1895,7 +2118,6 @@ export function TabuleiroBatalha({
                   </p>
                 ) : (
                   <>
-                    {/* TROCAR CENÁRIO PRONTO OU SALVO */}
                     <div className="bg-zinc-950 border border-zinc-800 rounded-xl p-3 space-y-2.5">
                       <h4 className="text-[11px] font-bold uppercase text-amber-400 tracking-wider">
                         🗺️ Trocar Cenário Instantaneamente
@@ -1920,7 +2142,6 @@ export function TabuleiroBatalha({
                       </div>
                     </div>
 
-                    {/* CONFIGURAÇÕES VISUAIS DO CENÁRIO ATUAL */}
                     <div className="bg-zinc-950 border border-zinc-800 rounded-xl p-3 space-y-2.5">
                       <h4 className="text-[11px] font-bold uppercase text-zinc-400">
                         Tema & Imagem de Fundo
@@ -1974,7 +2195,6 @@ export function TabuleiroBatalha({
                       </div>
                     </div>
 
-                    {/* PALETA DE PROPS INTERATIVOS */}
                     <div className="bg-zinc-950 border border-zinc-800 rounded-xl p-3 space-y-2.5">
                       <div className="flex justify-between items-center">
                         <h4 className="text-[11px] font-bold uppercase text-zinc-400">
@@ -2044,7 +2264,6 @@ export function TabuleiroBatalha({
                       </div>
                     </div>
 
-                    {/* SALVAR CENÁRIO */}
                     <div className="bg-zinc-950 border border-zinc-800 rounded-xl p-3 space-y-2">
                       <input
                         type="text"
@@ -2066,7 +2285,7 @@ export function TabuleiroBatalha({
             )}
           </div>
 
-          {/* REGISTRO DE ROLAGENS E COMBATE (SEMPRE VISÍVEL NO RODAPÉ DA LATERAL) */}
+          {/* REGISTRO DE ROLAGENS E COMBATE */}
           <div className="h-52 border-t border-zinc-800 bg-zinc-950 flex flex-col">
             <div className="px-3 py-1.5 border-b border-zinc-800 flex justify-between items-center">
               <span className="text-[10px] font-bold uppercase tracking-widest text-zinc-400">

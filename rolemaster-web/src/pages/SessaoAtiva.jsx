@@ -1,16 +1,35 @@
 import { useEffect, useState, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { HubConnectionBuilder } from "@microsoft/signalr";
-import { api } from "../services/api";
+import { api, HUB_URL, obterUsuarioLogado } from "../services/api";
 import { TabuleiroBatalha } from "../components/TabuleiroBatalha";
+import { rolarDado, calcularModificador } from "../data/dndPresets";
 
-// URL base do servidor C#
-const BACKEND_URL =
-  import.meta.env.VITE_HUB_URL || "https://rolemaster-ioyd.onrender.com";
+const PERICIAS_STORYTELLING = [
+  { key: "percepcao", label: "Percepção", attr: "sabedoria" },
+  { key: "investigacao", label: "Investigação", attr: "inteligencia" },
+  { key: "furtividade", label: "Furtividade", attr: "destreza" },
+  { key: "intuicao", label: "Intuição", attr: "sabedoria" },
+  { key: "persuasao", label: "Persuasão", attr: "carisma" },
+  { key: "intimidacao", label: "Intimidação", attr: "carisma" },
+  { key: "enganacao", label: "Enganação", attr: "carisma" },
+  { key: "arcanismo", label: "Arcanismo", attr: "inteligencia" },
+  { key: "atletismo", label: "Atletismo", attr: "forca" },
+  { key: "acrobacia", label: "Acrobacia", attr: "destreza" },
+  { key: "historia", label: "História", attr: "inteligencia" },
+  { key: "natureza", label: "Natureza", attr: "inteligencia" },
+  { key: "religiao", label: "Religião", attr: "inteligencia" },
+  { key: "medicina", label: "Medicina", attr: "sabedoria" },
+  { key: "sobrevivencia", label: "Sobrevivência", attr: "sabedoria" },
+  { key: "prestidigitacao", label: "Prestidigitação", attr: "destreza" },
+  { key: "atuacao", label: "Atuação", attr: "carisma" },
+  { key: "lidarComAnimais", label: "Lidar c/ Animais", attr: "sabedoria" },
+];
 
 export function SessaoAtiva() {
   const navigate = useNavigate();
   const tenantId = localStorage.getItem("tenantId");
+  const usuarioLogado = obterUsuarioLogado();
 
   const [isMestre, setIsMestre] = useState(false);
   const [cenaAtual, setCenaAtual] = useState("");
@@ -27,7 +46,13 @@ export function SessaoAtiva() {
   const [modoBatalha, setModoBatalha] = useState(false);
   const [estadoBatalhaRemoto, setEstadoBatalhaRemoto] = useState(null);
 
-  // Referência para o player de áudio invisível (mantém música tocando no Storytelling e na Batalha)
+  // === ROLADOR DE DADOS E TESTES DE PERÍCIA NO STORYTELLING ===
+  const [roladorAberto, setRoladorAberto] = useState(false);
+  const [fichasDisponiveis, setFichasDisponiveis] = useState([]);
+  const [fichaAtivaId, setFichaAtivaId] = useState("");
+  const [modoD20Story, setModoD20Story] = useState("normal");
+  const [rolagensStory, setRolagensStory] = useState([]);
+
   const audioRef = useRef(null);
   const conexaoRef = useRef(null);
   const volumeRef = useRef(volume);
@@ -39,10 +64,20 @@ export function SessaoAtiva() {
   const verificarAcessoEConectar = async () => {
     try {
       const response = await api.get(`/mesas/${tenantId}`);
-      setIsMestre(response.data.isMestre);
+      const mestre = Boolean(response.data.isMestre);
+      setIsMestre(mestre);
 
-      if (response.data.isMestre) {
+      if (mestre) {
         await carregarMidias();
+        const resFichas = await api.get(`/characters/mesa/${tenantId}`);
+        const lista = Array.isArray(resFichas.data) ? resFichas.data : [];
+        setFichasDisponiveis(lista);
+        if (lista.length > 0) setFichaAtivaId(String(lista[0].id));
+      } else {
+        const resMinhas = await api.get(`/characters/mesa/${tenantId}/minhas`);
+        const lista = Array.isArray(resMinhas.data) ? resMinhas.data : [];
+        setFichasDisponiveis(lista);
+        if (lista.length > 0) setFichaAtivaId(String(lista[0].id));
       }
 
       iniciarSignalR();
@@ -63,7 +98,7 @@ export function SessaoAtiva() {
 
   const iniciarSignalR = () => {
     const novaConexao = new HubConnectionBuilder()
-      .withUrl(`${BACKEND_URL}/campanhaHub`)
+      .withUrl(HUB_URL)
       .withAutomaticReconnect()
       .build();
 
@@ -76,12 +111,10 @@ export function SessaoAtiva() {
           console.error("Falha ao invocar EntrarNaMesa:", err);
         }
 
-        // 1. Ouvir a ordem de trocar a imagem da cena
         novaConexao.on("ReceberNovaCena", (urlImagem) => {
           setCenaAtual(urlImagem);
         });
 
-        // 2. Ouvir a ordem de tocar música
         novaConexao.on("ReceberMusica", (urlMusica) => {
           setAudioAtivo(urlMusica);
           if (audioRef.current) {
@@ -93,7 +126,6 @@ export function SessaoAtiva() {
           }
         });
 
-        // 3. Ouvir quando o Mestre invoca ou encerra o Tabuleiro de Batalha
         novaConexao.on("ModoBatalhaAlterado", (emBatalha, estadoBatalha) => {
           setModoBatalha(Boolean(emBatalha));
           if (estadoBatalha) {
@@ -101,7 +133,6 @@ export function SessaoAtiva() {
           }
         });
 
-        // 4. Caso o Mestre use a convocação antiga, também abre o tabuleiro de batalha
         novaConexao.on("ReceberConvocacao", () => {
           setModoBatalha(true);
         });
@@ -109,6 +140,15 @@ export function SessaoAtiva() {
         novaConexao.on("EstadoBatalhaAtualizado", (estado) => {
           if (estado) {
             setEstadoBatalhaRemoto(estado);
+          }
+        });
+
+        novaConexao.on("ReceberRolagemStorytelling", (rolagem) => {
+          if (rolagem) {
+            setRolagensStory((prev) => [
+              rolagem,
+              ...prev.filter((r) => r.id !== rolagem.id).slice(0, 19),
+            ]);
           }
         });
 
@@ -146,6 +186,112 @@ export function SessaoAtiva() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tenantId, navigate]);
+
+  // === ROLAGENS NO MODO STORYTELLING ===
+  const fichaSelecionadaStory = fichasDisponiveis.find(
+    (f) => String(f.id) === String(fichaAtivaId),
+  );
+
+  const publicarRolagemStory = async (pacote) => {
+    setRolagensStory((prev) => [pacote, ...prev.slice(0, 19)]);
+    if (conexaoRef.current) {
+      try {
+        await conexaoRef.current.invoke(
+          "EnviarRolagemStorytelling",
+          tenantId,
+          pacote,
+        );
+      } catch {
+        // fallback local se o Hub remoto ainda não tiver sido atualizado
+      }
+    }
+  };
+
+  const rolarDadoLivreStory = async (faces) => {
+    const autor =
+      fichaSelecionadaStory?.nome ||
+      (isMestre ? "Mestre" : usuarioLogado?.nome || "Aventureiro");
+
+    if (faces === 20 && modoD20Story !== "normal") {
+      const d1 = rolarDado(20);
+      const d2 = rolarDado(20);
+      const escolhido =
+        modoD20Story === "vantagem" ? Math.max(d1, d2) : Math.min(d1, d2);
+      await publicarRolagemStory({
+        id: `${Date.now()}-${Math.random()}`,
+        autor,
+        titulo: `1d20 (${modoD20Story.toUpperCase()})`,
+        detalhe: `[${d1}, ${d2}]`,
+        total: escolhido,
+        critico: escolhido === 20,
+        falha: escolhido === 1,
+        horario: new Date().toLocaleTimeString([], {
+          hour: "2-digit",
+          minute: "2-digit",
+        }),
+      });
+      return;
+    }
+
+    const valor = rolarDado(faces);
+    await publicarRolagemStory({
+      id: `${Date.now()}-${Math.random()}`,
+      autor,
+      titulo: `1d${faces}`,
+      detalhe: `[${valor}]`,
+      total: valor,
+      critico: faces === 20 && valor === 20,
+      falha: faces === 20 && valor === 1,
+      horario: new Date().toLocaleTimeString([], {
+        hour: "2-digit",
+        minute: "2-digit",
+      }),
+    });
+  };
+
+  const rolarPericiaStory = async (pericia) => {
+    const autor =
+      fichaSelecionadaStory?.nome ||
+      (isMestre ? "Mestre" : usuarioLogado?.nome || "Aventureiro");
+
+    // Se a ficha tiver valor explícito da perícia, usa ele; senão usa o modificador do atributo base
+    const valorPericiaExplicito = Number(
+      fichaSelecionadaStory?.[pericia.key] ?? 0,
+    );
+    const modAtributo = calcularModificador(
+      fichaSelecionadaStory?.[pericia.attr] ?? 10,
+    );
+    const bonus =
+      valorPericiaExplicito !== 0 ? valorPericiaExplicito : modAtributo;
+
+    const d1 = rolarDado(20);
+    const d2 = rolarDado(20);
+    const d20 =
+      modoD20Story === "vantagem"
+        ? Math.max(d1, d2)
+        : modoD20Story === "desvantagem"
+          ? Math.min(d1, d2)
+          : d1;
+
+    const total = d20 + bonus;
+    const strBonus = bonus >= 0 ? `+ ${bonus}` : `- ${Math.abs(bonus)}`;
+    const strDados =
+      modoD20Story === "normal" ? `1d20[${d20}]` : `2d20[${d1},${d2}→${d20}]`;
+
+    await publicarRolagemStory({
+      id: `${Date.now()}-${Math.random()}`,
+      autor,
+      titulo: `Teste de ${pericia.label}`,
+      detalhe: `${strDados} ${strBonus}`,
+      total,
+      critico: d20 === 20,
+      falha: d20 === 1,
+      horario: new Date().toLocaleTimeString([], {
+        hour: "2-digit",
+        minute: "2-digit",
+      }),
+    });
+  };
 
   // === CONTROLES DO MESTRE ===
 
@@ -251,7 +397,6 @@ export function SessaoAtiva() {
     }
   };
 
-  // Invoca o Tabuleiro de Batalha imediatamente ou após contagem dramática
   const invocarMomentoDeBatalha = async (comContagem = false) => {
     const ativarAgora = async () => {
       setModoBatalha(true);
@@ -277,7 +422,7 @@ export function SessaoAtiva() {
             estadoSalvo,
           );
         } catch {
-          // fallback caso hub remoto ainda não tenha AlternarModoBatalha
+          // fallback
         }
       }
     };
@@ -320,7 +465,6 @@ export function SessaoAtiva() {
 
   return (
     <div className="w-screen h-screen bg-black overflow-hidden relative flex flex-col">
-      {/* Player de áudio global da sessão (continua tocando durante Storytelling e Batalha) */}
       <audio ref={audioRef} loop />
 
       {modoBatalha ? (
@@ -354,17 +498,176 @@ export function SessaoAtiva() {
               ⇦ Retornar à Campanha
             </button>
 
-            <button
-              onClick={() => void invocarMomentoDeBatalha(false)}
-              className="pointer-events-auto bg-red-700/90 hover:bg-red-600 text-white px-5 py-2 rounded-lg backdrop-blur-sm border border-red-500 transition-all text-sm font-bold shadow-lg shadow-red-950/50 flex items-center gap-2"
-            >
-              ⚔️ Abrir Tabuleiro de Batalha
-            </button>
+            <div className="flex items-center gap-3 pointer-events-auto">
+              <button
+                onClick={() => setRoladorAberto(!roladorAberto)}
+                className={`px-4 py-2 rounded-lg backdrop-blur-sm border text-sm font-bold transition-all flex items-center gap-2 ${
+                  roladorAberto
+                    ? "bg-amber-600 border-amber-400 text-white shadow-lg"
+                    : "bg-zinc-900/80 hover:bg-zinc-800 border-zinc-700 text-amber-400"
+                }`}
+              >
+                🎲 Dados & Testes de Perícia
+              </button>
+
+              <button
+                onClick={() => void invocarMomentoDeBatalha(false)}
+                className="bg-red-700/90 hover:bg-red-600 text-white px-5 py-2 rounded-lg backdrop-blur-sm border border-red-500 transition-all text-sm font-bold shadow-lg shadow-red-950/50 flex items-center gap-2"
+              >
+                ⚔️ Abrir Tabuleiro de Batalha
+              </button>
+            </div>
           </div>
+
+          {/* FEED DE ROLAGENS EM TEMPO REAL NO CANTO SUPERIOR ESQUERDO */}
+          {rolagensStory.length > 0 && (
+            <div className="absolute top-16 left-4 z-40 w-80 space-y-2 pointer-events-none">
+              {rolagensStory.slice(0, 4).map((r) => (
+                <div
+                  key={r.id}
+                  className={`p-3 rounded-xl backdrop-blur-md border shadow-xl flex justify-between items-center ${
+                    r.critico
+                      ? "bg-emerald-950/90 border-emerald-400 text-emerald-100"
+                      : r.falha
+                        ? "bg-red-950/90 border-red-500 text-red-100"
+                        : "bg-zinc-950/85 border-zinc-700 text-zinc-100"
+                  }`}
+                >
+                  <div className="min-w-0 pr-2">
+                    <span className="text-[10px] font-bold uppercase text-amber-400 block truncate">
+                      🎲 {r.autor}
+                    </span>
+                    <span className="text-xs font-bold block truncate">
+                      {r.titulo}
+                    </span>
+                    <span className="text-[10px] text-zinc-400 font-mono">
+                      {r.detalhe}
+                    </span>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <span className="text-2xl font-extrabold font-mono">
+                      {r.total}
+                    </span>
+                    {r.critico && (
+                      <span className="block text-[9px] text-emerald-300 font-bold">
+                        CRÍTICO!
+                      </span>
+                    )}
+                    {r.falha && (
+                      <span className="block text-[9px] text-red-300 font-bold">
+                        FALHA!
+                      </span>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* PAINEL FLUTUANTE DE ROLAGEM DE DADOS E PERÍCIAS NO STORYTELLING */}
+          {roladorAberto && (
+            <div className="absolute top-16 right-4 z-50 w-96 bg-zinc-950/95 backdrop-blur-md border border-zinc-700 rounded-2xl p-4 shadow-2xl space-y-4">
+              <div className="flex justify-between items-center border-b border-zinc-800 pb-2">
+                <h4 className="text-xs font-bold uppercase tracking-wider text-amber-400">
+                  🎲 Rolador de Dados & Testes D&D 5e
+                </h4>
+                <button
+                  onClick={() => setRoladorAberto(false)}
+                  className="text-zinc-500 hover:text-white text-sm font-bold"
+                >
+                  ✕
+                </button>
+              </div>
+
+              {/* Seletor de Ficha Ativa para Testes */}
+              {fichasDisponiveis.length > 0 && (
+                <div>
+                  <label className="block text-[10px] text-zinc-400 uppercase font-bold mb-1">
+                    Rolar como Personagem:
+                  </label>
+                  <select
+                    value={fichaAtivaId}
+                    onChange={(e) => setFichaAtivaId(e.target.value)}
+                    className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-2.5 py-1.5 text-xs text-white"
+                  >
+                    {fichasDisponiveis.map((f) => (
+                      <option key={f.id} value={f.id}>
+                        {f.nome} ({f.classe} Nv {f.nivel})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {/* Modo Vantagem / Normal / Desvantagem */}
+              <div className="grid grid-cols-3 gap-1 bg-zinc-900 p-1 rounded-lg border border-zinc-800">
+                {["desvantagem", "normal", "vantagem"].map((m) => (
+                  <button
+                    key={m}
+                    onClick={() => setModoD20Story(m)}
+                    className={`py-1 rounded text-[10px] font-bold uppercase ${
+                      modoD20Story === m
+                        ? "bg-amber-600 text-white"
+                        : "text-zinc-400 hover:text-white"
+                    }`}
+                  >
+                    {m}
+                  </button>
+                ))}
+              </div>
+
+              {/* Dados Poliedrais Rápidos */}
+              <div>
+                <span className="block text-[10px] text-zinc-400 uppercase font-bold mb-1.5">
+                  Dados Livres:
+                </span>
+                <div className="grid grid-cols-7 gap-1.5">
+                  {[4, 6, 8, 10, 12, 20, 100].map((faces) => (
+                    <button
+                      key={faces}
+                      onClick={() => void rolarDadoLivreStory(faces)}
+                      className="bg-zinc-900 hover:bg-amber-700 border border-zinc-700 hover:border-amber-400 text-white py-2 rounded-lg text-xs font-bold font-mono transition-colors"
+                    >
+                      d{faces}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Testes de Perícia da Ficha */}
+              <div>
+                <span className="block text-[10px] text-zinc-400 uppercase font-bold mb-1.5">
+                  Testes de Perícia (1d20 + Bônus):
+                </span>
+                <div className="grid grid-cols-2 gap-1.5 max-h-48 overflow-y-auto pr-1">
+                  {PERICIAS_STORYTELLING.map((per) => {
+                    const valExplicito = Number(
+                      fichaSelecionadaStory?.[per.key] ?? 0,
+                    );
+                    const modAttr = calcularModificador(
+                      fichaSelecionadaStory?.[per.attr] ?? 10,
+                    );
+                    const bonus = valExplicito !== 0 ? valExplicito : modAttr;
+                    return (
+                      <button
+                        key={per.key}
+                        onClick={() => void rolarPericiaStory(per)}
+                        className="flex justify-between items-center bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 px-2.5 py-1.5 rounded-lg text-xs text-zinc-200 transition-colors"
+                      >
+                        <span className="truncate">{per.label}</span>
+                        <span className="font-mono text-amber-400 font-bold ml-1">
+                          {bonus >= 0 ? `+${bonus}` : bonus}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          )}
 
           {isMestre && (
             <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-50 w-11/12 max-w-4xl bg-zinc-950/90 backdrop-blur-md border border-zinc-800 rounded-2xl p-6 shadow-2xl flex flex-col gap-4">
-              {/* Modal de Preview de Upload */}
               {arquivoPreview && (
                 <div className="fixed inset-0 z-60 flex items-center justify-center bg-black/90 p-4">
                   <div className="bg-zinc-900 border border-zinc-700 p-6 rounded-xl text-center max-w-sm w-full shadow-2xl">
@@ -420,7 +723,6 @@ export function SessaoAtiva() {
               </div>
 
               <div className="grid grid-cols-2 gap-6 h-48 overflow-y-auto pr-2 custom-scrollbar">
-                {/* Coluna Imagens */}
                 <div>
                   <h4 className="text-zinc-400 text-xs mb-3 uppercase font-bold tracking-widest">
                     Cenas (Imagens)
@@ -471,7 +773,6 @@ export function SessaoAtiva() {
                   </div>
                 </div>
 
-                {/* Coluna Músicas */}
                 <div>
                   <h4 className="text-zinc-400 text-xs mb-3 uppercase font-bold tracking-widest">
                     Trilha Sonora
@@ -514,7 +815,6 @@ export function SessaoAtiva() {
                             </div>
                           </div>
 
-                          {/* Controle de Volume Local */}
                           {audioAtivo === midia.caminhoServidor && (
                             <div className="flex items-center gap-2 px-1">
                               <span className="text-[10px] text-zinc-500">
@@ -562,7 +862,6 @@ export function SessaoAtiva() {
             </div>
           )}
 
-          {/* Aviso para o Jogador */}
           {!isMestre && !cenaAtual && (
             <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
               <p className="text-zinc-500 text-xl font-light tracking-widest animate-pulse">
