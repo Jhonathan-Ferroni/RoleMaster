@@ -1,4 +1,4 @@
-﻿using Microsoft.AspNetCore.SignalR;
+using Microsoft.AspNetCore.SignalR;
 using RoleMaster.Core.Entities;
 
 namespace RoleMaster.API.Hubs;
@@ -40,5 +40,37 @@ public class CampanhaHub : Hub
     public async Task AtualizarStatusJogador(string mesaId, string usuarioId, StatusJogadorEncontro novoStatus)
     {
         await Clients.Group(mesaId).SendAsync("StatusJogadorAtualizado", usuarioId, novoStatus);
+    }
+
+    // === MÉTODOS DO TABULEIRO DE BATALHA D&D ===
+
+    // Invoca ou encerra o modo de batalha durante o storytelling e sincroniza o estado inicial
+    public async Task AlternarModoBatalha(string mesaId, bool emBatalha, object? estadoBatalha)
+    {
+        await Clients.Group(mesaId).SendAsync("ModoBatalhaAlterado", emBatalha, estadoBatalha);
+    }
+
+    // Sincroniza estado completo do tabuleiro (tokens, iniciativa, rodada, cenário ativo, logs)
+    public async Task SincronizarEstadoBatalha(string mesaId, object estadoBatalha)
+    {
+        await Clients.Group(mesaId).SendAsync("EstadoBatalhaAtualizado", estadoBatalha);
+    }
+
+    // Move um token no grid quadriculado em tempo real
+    public async Task MoverToken(string mesaId, string tokenId, int novoX, int novoY, double movimentoRestante)
+    {
+        await Clients.Group(mesaId).SendAsync("TokenMovido", tokenId, novoX, novoY, movimentoRestante);
+    }
+
+    // Transmite uma ação de combate (ataque, cura, magia, salvaguarda) e seu log para todos da mesa
+    public async Task ExecutarAcaoCombate(string mesaId, object resultadoAcao)
+    {
+        await Clients.Group(mesaId).SendAsync("AcaoCombateExecutada", resultadoAcao);
+    }
+
+    // Atualiza ou troca o cenário e seus props em tempo real durante a batalha
+    public async Task AtualizarCenarioBatalha(string mesaId, object cenario)
+    {
+        await Clients.Group(mesaId).SendAsync("CenarioBatalhaAtualizado", cenario);
     }
 }

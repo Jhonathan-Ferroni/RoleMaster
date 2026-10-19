@@ -21,11 +21,7 @@ export function AprovacaoFichas() {
   const carregarDados = async () => {
     try {
       // 1. Busca todas as fichas da mesa (Pendentes e Aprovadas)
-      const respFichas = await api.get(
-        `/characters/mesa/${tenantId}/pendentes`,
-      );
-      // OBS: Você precisará ajustar sua API para retornar TODOS da mesa, não só os pendentes!
-      // Ex: await api.get(`/characters/mesa/${tenantId}`);
+      const respFichas = await api.get(`/characters/mesa/${tenantId}`);
       setPersonagens(respFichas.data);
 
       // 2. Busca os jogadores aprovados na mesa para popular o Dropdown

@@ -1,4 +1,4 @@
-﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
 using RoleMaster.Core.Entities;
 using RoleMaster.Core.Interfaces;
 
@@ -22,6 +22,7 @@ public class RoleMasterDbContext : DbContext
     public DbSet<Mesa> Mesas { get; set; }
     public DbSet<SolicitacaoMesa> SolicitacoesMesa { get; set; }
     public DbSet<MidiaCampanha> MidiasCampanha { get; set; }
+    public DbSet<CenarioBatalha> CenariosBatalha { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -29,6 +30,7 @@ public class RoleMasterDbContext : DbContext
 
         // O personagem AINDA é estritamente isolado por mesa (não existem personagens globais)
         modelBuilder.Entity<Character>().HasQueryFilter(c => c.TenantId == _tenantId);
+        modelBuilder.Entity<CenarioBatalha>().HasQueryFilter(cb => cb.TenantId == _tenantId);
 
         // Equipamentos e Magias trazem os itens da mesa atual + os itens globais do sistema
         modelBuilder.Entity<Equipamento>().HasQueryFilter(e => e.TenantId == _tenantId || e.TenantId == null);

@@ -286,14 +286,20 @@ export function Campanha() {
               </div>
             </div>
 
-            <div className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-8 text-center">
-              <h3 className="text-xl font-bold text-zinc-300 mb-2">
-                Aguardando Início da Sessão...
+            <div className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-8 text-center space-y-4">
+              <h3 className="text-xl font-bold text-zinc-300">
+                Sessão & Tabuleiro de Batalha
               </h3>
               <p className="text-zinc-500">
                 Mantenha seus machados afiados. Quando o mestre iniciar o
-                encontro, o chamado surgirá nesta tela.
+                encontro, o chamado surgirá nesta tela, ou você já pode entrar na sala ativa.
               </p>
+              <button
+                onClick={() => navigate("/sessao-ativa")}
+                className="bg-red-700 hover:bg-red-600 text-white font-bold py-3 px-8 rounded-lg transition-colors shadow-lg shadow-red-900/20"
+              >
+                ⚔️ Entrar na Sessão / Tabuleiro
+              </button>
             </div>
           </div>
         )}

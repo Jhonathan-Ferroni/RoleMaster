@@ -1,4 +1,4 @@
-﻿using System.Security.Claims;
+using System.Security.Claims;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -65,7 +65,6 @@ public class MesasControllerTests
         // Criamos uma mesa onde o MestreId é 1 (o mesmo ID do nosso usuário simulado)
         var mesa = new Mesa
         {
-            Id = Guid.NewGuid().ToString(),
             Nome = "A Caverna do Dragão",
             CodigoConvite = "DRAGAO",
             MestreId = 1

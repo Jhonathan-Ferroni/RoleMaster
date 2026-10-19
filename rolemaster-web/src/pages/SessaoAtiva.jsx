@@ -2,9 +2,11 @@ import { useEffect, useState, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { HubConnectionBuilder } from "@microsoft/signalr";
 import { api } from "../services/api";
+import { TabuleiroBatalha } from "../components/TabuleiroBatalha";
 
-// URL base do seu servidor C# corrigida (Render)
-const BACKEND_URL = "https://rolemaster-ioyd.onrender.com";
+// URL base do servidor C#
+const BACKEND_URL =
+  import.meta.env.VITE_HUB_URL || "https://rolemaster-ioyd.onrender.com";
 
 export function SessaoAtiva() {
   const navigate = useNavigate();
@@ -19,16 +21,15 @@ export function SessaoAtiva() {
   const [contagem, setContagem] = useState(null);
   const [volume, setVolume] = useState(0.5);
   const [audioAtivo, setAudioAtivo] = useState("");
+  const [conexaoPronta, setConexaoPronta] = useState(null);
 
-  // Referência para o player de áudio invisível
+  // === CONTROLE DO MOMENTO DE BATALHA DURANTE O STORYTELLING ===
+  const [modoBatalha, setModoBatalha] = useState(false);
+  const [estadoBatalhaRemoto, setEstadoBatalhaRemoto] = useState(null);
+
+  // Referência para o player de áudio invisível (mantém música tocando no Storytelling e na Batalha)
   const audioRef = useRef(null);
-
-  // === FIX 1: ref para a conexão, para o cleanup do useEffect sempre
-  // enxergar a instância mais recente (evita stale closure) ===
   const conexaoRef = useRef(null);
-
-  // === FIX 2: ref para o volume, para o listener "ReceberMusica"
-  // (registrado uma única vez) sempre usar o valor mais recente ===
   const volumeRef = useRef(volume);
 
   useEffect(() => {
@@ -69,17 +70,13 @@ export function SessaoAtiva() {
     novaConexao
       .start()
       .then(async () => {
-        console.log("🎲 Conectado ao Túnel de Transmissão!");
         try {
           await novaConexao.invoke("EntrarNaMesa", tenantId);
-          console.log("Mestre entrou no grupo da mesa:", tenantId);
         } catch (err) {
-          console.error("Falha ao invocar EntrarNaMesa (mestre):", err);
+          console.error("Falha ao invocar EntrarNaMesa:", err);
         }
 
-        // === OUVIDOS DOS JOGADORES E DO MESTRE ===
-
-        // 1. Ouvir a ordem de trocar a imagem da tela
+        // 1. Ouvir a ordem de trocar a imagem da cena
         novaConexao.on("ReceberNovaCena", (urlImagem) => {
           setCenaAtual(urlImagem);
         });
@@ -96,7 +93,27 @@ export function SessaoAtiva() {
           }
         });
 
+        // 3. Ouvir quando o Mestre invoca ou encerra o Tabuleiro de Batalha
+        novaConexao.on("ModoBatalhaAlterado", (emBatalha, estadoBatalha) => {
+          setModoBatalha(Boolean(emBatalha));
+          if (estadoBatalha) {
+            setEstadoBatalhaRemoto(estadoBatalha);
+          }
+        });
+
+        // 4. Caso o Mestre use a convocação antiga, também abre o tabuleiro de batalha
+        novaConexao.on("ReceberConvocacao", () => {
+          setModoBatalha(true);
+        });
+
+        novaConexao.on("EstadoBatalhaAtualizado", (estado) => {
+          if (estado) {
+            setEstadoBatalhaRemoto(estado);
+          }
+        });
+
         conexaoRef.current = novaConexao;
+        setConexaoPronta(novaConexao);
       })
       .catch((err) => console.error("Falha ao conectar no Túnel: ", err));
   };
@@ -234,12 +251,43 @@ export function SessaoAtiva() {
     }
   };
 
-  const iniciarConvocacao = () => {
-    if (!conexaoRef.current) {
-      return alert("A conexão com o túnel ainda não está pronta.");
+  // Invoca o Tabuleiro de Batalha imediatamente ou após contagem dramática
+  const invocarMomentoDeBatalha = async (comContagem = false) => {
+    const ativarAgora = async () => {
+      setModoBatalha(true);
+      let estadoSalvo = null;
+      try {
+        const bruto = localStorage.getItem(`rolemaster_batalha_${tenantId}`);
+        if (bruto) estadoSalvo = JSON.parse(bruto);
+      } catch {
+        estadoSalvo = null;
+      }
+
+      if (conexaoRef.current) {
+        try {
+          await conexaoRef.current.invoke("ConvocarJogadores", tenantId);
+        } catch {
+          // continua
+        }
+        try {
+          await conexaoRef.current.invoke(
+            "AlternarModoBatalha",
+            tenantId,
+            true,
+            estadoSalvo,
+          );
+        } catch {
+          // fallback caso hub remoto ainda não tenha AlternarModoBatalha
+        }
+      }
+    };
+
+    if (!comContagem) {
+      await ativarAgora();
+      return;
     }
 
-    let tempo = 5;
+    let tempo = 3;
     setContagem(tempo);
 
     const intervalo = setInterval(async () => {
@@ -248,238 +296,281 @@ export function SessaoAtiva() {
 
       if (tempo === 0) {
         clearInterval(intervalo);
-        try {
-          await conexaoRef.current.invoke("ConvocarJogadores", tenantId);
-          setContagem(null);
-        } catch (err) {
-          console.error("Erro ao convocar:", err);
-          setContagem(null);
-        }
+        setContagem(null);
+        await ativarAgora();
       }
     }, 1000);
   };
 
+  const encerrarMomentoDeBatalha = async () => {
+    setModoBatalha(false);
+    if (conexaoRef.current && isMestre) {
+      try {
+        await conexaoRef.current.invoke(
+          "AlternarModoBatalha",
+          tenantId,
+          false,
+          null,
+        );
+      } catch {
+        // ignora
+      }
+    }
+  };
+
   return (
     <div className="w-screen h-screen bg-black overflow-hidden relative flex flex-col">
-      <div
-        className="absolute inset-0 bg-contain bg-center bg-no-repeat transition-all duration-1000 ease-in-out"
-        style={{
-          backgroundImage: cenaAtual ? `url(${cenaAtual})` : "none",
-          backgroundColor: cenaAtual ? "#000" : "#09090b",
-        }}
-      />
-
-      <div className="absolute inset-0 bg-black/40 pointer-events-none" />
-
+      {/* Player de áudio global da sessão (continua tocando durante Storytelling e Batalha) */}
       <audio ref={audioRef} loop />
 
-      <button
-        onClick={() => navigate("/campanha")}
-        className="absolute top-4 left-4 z-50 bg-black/50 hover:bg-red-900/80 text-white p-2 rounded-lg backdrop-blur-sm border border-zinc-700 transition-colors"
-      >
-        ⇦ Retornar
-      </button>
+      {modoBatalha ? (
+        <TabuleiroBatalha
+          tenantId={tenantId}
+          isMestre={isMestre}
+          conexaoSignalR={conexaoPronta}
+          midias={midias}
+          cenaStorytelling={cenaAtual}
+          estadoExterno={estadoBatalhaRemoto}
+          onVoltarStorytelling={encerrarMomentoDeBatalha}
+        />
+      ) : (
+        <>
+          <div
+            className="absolute inset-0 bg-contain bg-center bg-no-repeat transition-all duration-1000 ease-in-out"
+            style={{
+              backgroundImage: cenaAtual ? `url(${cenaAtual})` : "none",
+              backgroundColor: cenaAtual ? "#000" : "#09090b",
+            }}
+          />
 
-      {isMestre && (
-        <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-50 w-11/12 max-w-4xl bg-zinc-950/90 backdrop-blur-md border border-zinc-800 rounded-2xl p-6 shadow-2xl flex flex-col gap-4">
-          {/* Modal de Preview de Upload */}
-          {arquivoPreview && (
-            <div className="fixed inset-0 z-60 flex items-center justify-center bg-black/90 p-4">
-              <div className="bg-zinc-900 border border-zinc-700 p-6 rounded-xl text-center max-w-sm w-full shadow-2xl">
-                <h3 className="text-white font-bold mb-4">
-                  Confirmar Conjuração?
+          <div className="absolute inset-0 bg-black/40 pointer-events-none" />
+
+          {/* Barra superior de atalhos rápidos */}
+          <div className="absolute top-4 left-4 right-4 z-50 flex justify-between items-center pointer-events-none">
+            <button
+              onClick={() => navigate("/campanha")}
+              className="pointer-events-auto bg-black/60 hover:bg-red-900/80 text-white px-4 py-2 rounded-lg backdrop-blur-sm border border-zinc-700 transition-colors text-sm font-semibold"
+            >
+              ⇦ Retornar à Campanha
+            </button>
+
+            <button
+              onClick={() => void invocarMomentoDeBatalha(false)}
+              className="pointer-events-auto bg-red-700/90 hover:bg-red-600 text-white px-5 py-2 rounded-lg backdrop-blur-sm border border-red-500 transition-all text-sm font-bold shadow-lg shadow-red-950/50 flex items-center gap-2"
+            >
+              ⚔️ Abrir Tabuleiro de Batalha
+            </button>
+          </div>
+
+          {isMestre && (
+            <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-50 w-11/12 max-w-4xl bg-zinc-950/90 backdrop-blur-md border border-zinc-800 rounded-2xl p-6 shadow-2xl flex flex-col gap-4">
+              {/* Modal de Preview de Upload */}
+              {arquivoPreview && (
+                <div className="fixed inset-0 z-60 flex items-center justify-center bg-black/90 p-4">
+                  <div className="bg-zinc-900 border border-zinc-700 p-6 rounded-xl text-center max-w-sm w-full shadow-2xl">
+                    <h3 className="text-white font-bold mb-4">
+                      Confirmar Conjuração?
+                    </h3>
+                    {arquivoPreview.type.startsWith("image") ? (
+                      <img
+                        src={urlPreview}
+                        alt="Preview"
+                        className="max-h-48 mx-auto rounded mb-4"
+                      />
+                    ) : (
+                      <p className="text-zinc-400 mb-4 font-mono text-sm border border-zinc-800 bg-zinc-950 p-2 rounded">
+                        🎵 {arquivoPreview.name}
+                      </p>
+                    )}
+                    <div className="flex gap-2">
+                      <button
+                        onClick={confirmarUpload}
+                        disabled={uploading}
+                        className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white py-2 rounded font-bold transition-colors"
+                      >
+                        {uploading ? "Enviando..." : "Confirmar e Salvar"}
+                      </button>
+                      <button
+                        onClick={cancelarPreview}
+                        disabled={uploading}
+                        className="flex-1 bg-zinc-800 hover:bg-zinc-700 text-white py-2 rounded font-bold transition-colors border border-zinc-700"
+                      >
+                        Cancelar
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <div className="flex justify-between items-center border-b border-zinc-800 pb-2">
+                <h3 className="text-red-500 font-bold uppercase tracking-wider">
+                  Painel de Narração (Storytelling)
                 </h3>
-                {arquivoPreview.type.startsWith("image") ? (
-                  <img
-                    src={urlPreview}
-                    alt="Preview"
-                    className="max-h-48 mx-auto rounded mb-4"
+
+                <label className="bg-zinc-800 hover:bg-zinc-700 text-zinc-100 px-4 py-1.5 rounded cursor-pointer transition-colors border border-zinc-700 text-sm font-semibold">
+                  {uploading ? "Conjurando..." : "+ Upar Mídia (Soma no Banco)"}
+                  <input
+                    type="file"
+                    className="hidden"
+                    accept="image/*, audio/*"
+                    onChange={handleSelecionarArquivo}
+                    disabled={uploading}
                   />
-                ) : (
-                  <p className="text-zinc-400 mb-4 font-mono text-sm border border-zinc-800 bg-zinc-950 p-2 rounded">
-                    🎵 {arquivoPreview.name}
-                  </p>
-                )}
-                <div className="flex gap-2">
+                </label>
+              </div>
+
+              <div className="grid grid-cols-2 gap-6 h-48 overflow-y-auto pr-2 custom-scrollbar">
+                {/* Coluna Imagens */}
+                <div>
+                  <h4 className="text-zinc-400 text-xs mb-3 uppercase font-bold tracking-widest">
+                    Cenas (Imagens)
+                  </h4>
+                  <div className="flex flex-col gap-3">
+                    {midias
+                      .filter((m) => m.tipo === 0)
+                      .map((midia) => (
+                        <div
+                          key={midia.id}
+                          className="flex items-center gap-2 w-full group"
+                        >
+                          <button
+                            onClick={() => transmitirCena(midia.caminhoServidor)}
+                            className="flex items-center gap-3 text-left text-sm text-zinc-300 hover:text-white bg-zinc-900/50 hover:bg-zinc-800 p-2 rounded border border-zinc-800 transition-colors flex-1 overflow-hidden"
+                          >
+                            <img
+                              src={midia.caminhoServidor}
+                              alt={midia.nomeArquivo}
+                              className="w-10 h-10 object-cover rounded border border-zinc-700 group-hover:border-zinc-500 transition-colors shrink-0"
+                            />
+                            <span className="truncate font-medium">
+                              {midia.nomeArquivo}
+                            </span>
+                          </button>
+
+                          <div className="flex gap-1 bg-zinc-900/50 rounded border border-zinc-800">
+                            <a
+                              href={midia.caminhoServidor}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="p-2 text-zinc-500 hover:text-blue-400 transition-colors flex items-center justify-center"
+                              title="Abrir ou Baixar Mídia"
+                              download={midia.nomeArquivo || "midia"}
+                            >
+                              🔗
+                            </a>
+                            <button
+                              onClick={(e) => handleExcluirMidia(midia.id, e)}
+                              className="p-2 text-zinc-500 hover:text-red-500 hover:bg-red-950/30 transition-colors flex items-center justify-center"
+                              title="Excluir Mídia"
+                            >
+                              🗑️
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                  </div>
+                </div>
+
+                {/* Coluna Músicas */}
+                <div>
+                  <h4 className="text-zinc-400 text-xs mb-3 uppercase font-bold tracking-widest">
+                    Trilha Sonora
+                  </h4>
+                  <div className="flex flex-col gap-2">
+                    {midias
+                      .filter((m) => m.tipo === 2)
+                      .map((midia) => (
+                        <div
+                          key={midia.id}
+                          className="flex flex-col gap-2 w-full group bg-zinc-900/50 p-2 rounded border border-zinc-800"
+                        >
+                          <div className="flex justify-between items-center w-full">
+                            <button
+                              onClick={() =>
+                                transmitirMusica(midia.caminhoServidor)
+                              }
+                              className="text-left text-sm text-emerald-500 hover:text-emerald-400 truncate transition-colors font-medium flex-1"
+                            >
+                              🎵 {midia.nomeArquivo}
+                            </button>
+                            <div className="flex gap-1">
+                              <a
+                                href={midia.caminhoServidor}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="p-2 text-zinc-500 hover:text-blue-400 transition-colors"
+                                title="Abrir Áudio em Nova Aba"
+                                download={midia.nomeArquivo || "audio"}
+                              >
+                                🔗
+                              </a>
+                              <button
+                                onClick={(e) => handleExcluirMidia(midia.id, e)}
+                                className="p-2 text-zinc-500 hover:text-red-500 hover:bg-red-950/30 rounded transition-colors"
+                                title="Excluir Música"
+                              >
+                                🗑️
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* Controle de Volume Local */}
+                          {audioAtivo === midia.caminhoServidor && (
+                            <div className="flex items-center gap-2 px-1">
+                              <span className="text-[10px] text-zinc-500">
+                                Vol
+                              </span>
+                              <input
+                                type="range"
+                                min="0"
+                                max="1"
+                                step="0.05"
+                                value={volume}
+                                onChange={(e) => {
+                                  const valor = parseFloat(e.target.value);
+                                  setVolume(valor);
+                                  if (audioRef.current) {
+                                    audioRef.current.volume = valor;
+                                  }
+                                }}
+                                className="w-full h-1 bg-zinc-700 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+                              />
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                  </div>
+                </div>
+              </div>
+
+              <div className="pt-4 border-t border-zinc-800 flex justify-between items-center gap-3">
+                <span className="text-xs text-zinc-500">
+                  Invoque o tabuleiro tático a qualquer momento da narrativa:
+                </span>
+                <div className="flex gap-3">
                   <button
-                    onClick={confirmarUpload}
-                    disabled={uploading}
-                    className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white py-2 rounded font-bold transition-colors"
+                    onClick={() => void invocarMomentoDeBatalha(true)}
+                    disabled={contagem !== null}
+                    className="bg-red-700 hover:bg-red-600 disabled:bg-red-900 text-white font-bold py-2 px-6 rounded shadow-lg shadow-red-900/20 active:scale-95 transition-all"
                   >
-                    {uploading ? "Enviando..." : "Confirmar e Salvar"}
-                  </button>
-                  <button
-                    onClick={cancelarPreview}
-                    disabled={uploading}
-                    className="flex-1 bg-zinc-800 hover:bg-zinc-700 text-white py-2 rounded font-bold transition-colors border border-zinc-700"
-                  >
-                    Cancelar
+                    {contagem !== null
+                      ? `Abrindo portais em ${contagem}...`
+                      : "⚔️ Invocar Batalha e Convocar Jogadores"}
                   </button>
                 </div>
               </div>
             </div>
           )}
 
-          <div className="flex justify-between items-center border-b border-zinc-800 pb-2">
-            <h3 className="text-red-500 font-bold uppercase tracking-wider">
-              Painel de Narração
-            </h3>
-
-            <label className="bg-zinc-800 hover:bg-zinc-700 text-zinc-100 px-4 py-1.5 rounded cursor-pointer transition-colors border border-zinc-700 text-sm font-semibold">
-              {uploading ? "Conjurando..." : "+ Upar Mídia (Soma no Banco)"}
-              <input
-                type="file"
-                className="hidden"
-                accept="image/*, audio/*"
-                onChange={handleSelecionarArquivo}
-                disabled={uploading}
-              />
-            </label>
-          </div>
-
-          <div className="grid grid-cols-2 gap-6 h-48 overflow-y-auto pr-2 custom-scrollbar">
-            {/* Coluna Imagens */}
-            <div>
-              <h4 className="text-zinc-400 text-xs mb-3 uppercase font-bold tracking-widest">
-                Cenas (Imagens)
-              </h4>
-              <div className="flex flex-col gap-3">
-                {midias
-                  .filter((m) => m.tipo === 0)
-                  .map((midia) => (
-                    <div
-                      key={midia.id}
-                      className="flex items-center gap-2 w-full group"
-                    >
-                      <button
-                        onClick={() => transmitirCena(midia.caminhoServidor)}
-                        className="flex items-center gap-3 text-left text-sm text-zinc-300 hover:text-white bg-zinc-900/50 hover:bg-zinc-800 p-2 rounded border border-zinc-800 transition-colors flex-1 overflow-hidden"
-                      >
-                        <img
-                          src={midia.caminhoServidor}
-                          alt={midia.nomeArquivo}
-                          className="w-10 h-10 object-cover rounded border border-zinc-700 group-hover:border-zinc-500 transition-colors shrink-0"
-                        />
-                        <span className="truncate font-medium">
-                          {midia.nomeArquivo}
-                        </span>
-                      </button>
-
-                      <div className="flex gap-1 bg-zinc-900/50 rounded border border-zinc-800">
-                        <a
-                          href={midia.caminhoServidor}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="p-2 text-zinc-500 hover:text-blue-400 transition-colors flex items-center justify-center"
-                          title="Abrir ou Baixar Mídia"
-                          download={midia.nomeArquivo || "midia"}
-                        >
-                          🔗
-                        </a>
-                        <button
-                          onClick={(e) => handleExcluirMidia(midia.id, e)}
-                          className="p-2 text-zinc-500 hover:text-red-500 hover:bg-red-950/30 transition-colors flex items-center justify-center"
-                          title="Excluir Mídia"
-                        >
-                          🗑️
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-              </div>
+          {/* Aviso para o Jogador */}
+          {!isMestre && !cenaAtual && (
+            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+              <p className="text-zinc-500 text-xl font-light tracking-widest animate-pulse">
+                O Mestre está preparando a cena...
+              </p>
             </div>
-
-            {/* Coluna Músicas */}
-            <div>
-              <h4 className="text-zinc-400 text-xs mb-3 uppercase font-bold tracking-widest">
-                Trilha Sonora
-              </h4>
-              <div className="flex flex-col gap-2">
-                {midias
-                  .filter((m) => m.tipo === 2)
-                  .map((midia) => (
-                    <div
-                      key={midia.id}
-                      className="flex flex-col gap-2 w-full group bg-zinc-900/50 p-2 rounded border border-zinc-800"
-                    >
-                      <div className="flex justify-between items-center w-full">
-                        <button
-                          onClick={() =>
-                            transmitirMusica(midia.caminhoServidor)
-                          }
-                          className="text-left text-sm text-emerald-500 hover:text-emerald-400 truncate transition-colors font-medium flex-1"
-                        >
-                          🎵 {midia.nomeArquivo}
-                        </button>
-                        <div className="flex gap-1">
-                          <a
-                            href={midia.caminhoServidor}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="p-2 text-zinc-500 hover:text-blue-400 transition-colors"
-                            title="Abrir Áudio em Nova Aba"
-                            download={midia.nomeArquivo || "audio"}
-                          >
-                            🔗
-                          </a>
-                          <button
-                            onClick={(e) => handleExcluirMidia(midia.id, e)}
-                            className="p-2 text-zinc-500 hover:text-red-500 hover:bg-red-950/30 rounded transition-colors"
-                            title="Excluir Música"
-                          >
-                            🗑️
-                          </button>
-                        </div>
-                      </div>
-
-                      {/* Controle de Volume Local */}
-                      {audioAtivo === midia.caminhoServidor && (
-                        <div className="flex items-center gap-2 px-1">
-                          <span className="text-[10px] text-zinc-500">Vol</span>
-                          <input
-                            type="range"
-                            min="0"
-                            max="1"
-                            step="0.05"
-                            value={volume}
-                            onChange={(e) => {
-                              const valor = parseFloat(e.target.value);
-                              setVolume(valor);
-                              if (audioRef.current) {
-                                audioRef.current.volume = valor;
-                              }
-                            }}
-                            className="w-full h-1 bg-zinc-700 rounded-lg appearance-none cursor-pointer accent-emerald-500"
-                          />
-                        </div>
-                      )}
-                    </div>
-                  ))}
-              </div>
-            </div>
-          </div>
-
-          <div className="pt-4 border-t border-zinc-800 flex justify-end">
-            <button
-              onClick={iniciarConvocacao}
-              disabled={contagem !== null}
-              className="bg-red-700 hover:bg-red-600 disabled:bg-red-900 text-white font-bold py-2 px-8 rounded shadow-lg shadow-red-900/20 active:scale-95 transition-all"
-            >
-              {contagem !== null
-                ? `Preparando portais em ${contagem}...`
-                : "⚔️ Convocar Aventureiros para o Grid"}
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Aviso para o Jogador */}
-      {!isMestre && !cenaAtual && (
-        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-          <p className="text-zinc-500 text-xl font-light tracking-widest animate-pulse">
-            O Mestre está preparando a cena...
-          </p>
-        </div>
+          )}
+        </>
       )}
     </div>
   );
