@@ -1,28 +1,35 @@
 @import "tailwindcss";
 
-/* Configuração base responsiva e amigável para dispositivos móveis e desktop */
+/* Base Owlbear-inspired dark slate aesthetic */
 html,
 body {
-  @apply bg-zinc-950 text-zinc-100 antialiased selection:bg-red-700 selection:text-white;
+  @apply bg-[#111218] text-zinc-100 antialiased selection:bg-indigo-500 selection:text-white;
   overscroll-behavior-y: none;
   -webkit-tap-highlight-color: transparent;
 }
 
-/* Scrollbar customizada discreta */
+/* Fundo pontilhado sutil estilo mesa virtual (Owlbear Rodeo) */
+.owlbear-canvas-bg {
+  background-color: #111218;
+  background-image: radial-gradient(rgba(255, 255, 255, 0.08) 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+
+/* Scrollbar discreta */
 .custom-scrollbar::-webkit-scrollbar {
   width: 6px;
   height: 6px;
 }
 
 .custom-scrollbar::-webkit-scrollbar-track {
-  background: rgba(24, 24, 27, 0.6);
+  background: transparent;
 }
 
 .custom-scrollbar::-webkit-scrollbar-thumb {
-  background: rgba(82, 82, 91, 0.8);
+  background: rgba(113, 113, 122, 0.45);
   border-radius: 9999px;
 }
 
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: rgba(220, 38, 38, 0.8);
+  background: rgba(129, 140, 248, 0.75);
 }

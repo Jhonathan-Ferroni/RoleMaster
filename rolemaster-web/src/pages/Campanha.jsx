@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { HubConnectionBuilder } from "@microsoft/signalr";
 import { api, HUB_URL } from "../services/api";
@@ -6,57 +6,67 @@ import { api, HUB_URL } from "../services/api";
 export function Campanha() {
   const [mesa, setMesa] = useState(null);
   const [solicitacoes, setSolicitacoes] = useState([]);
-  const [minhasFichas, setMinhasFichas] = useState([]);
+  const [fichas, setFichas] = useState([]);
+  const [jogadoresMesa, setJogadoresMesa] = useState([]);
   const [conviteAberto, setConviteAberto] = useState(false);
+  const [codigoCopiado, setCodigoCopiado] = useState(false);
+  const [gerandoPadroes, setGerandoPadroes] = useState(false);
+
   const navigate = useNavigate();
   const tenantId = localStorage.getItem("tenantId");
 
-  const carregarSolicitacoes = async () => {
-    try {
-      const response = await api.get(`/mesas/${tenantId}/solicitacoes`);
-      setSolicitacoes(response.data);
-    } catch (error) {
-      console.error("Erro ao buscar solicitações:", error);
-    }
-  };
-
-  const carregarMinhasFichas = async () => {
-    try {
-      const response = await api.get(`/characters/mesa/${tenantId}/minhas`);
-      setMinhasFichas(Array.isArray(response.data) ? response.data : []);
-    } catch (error) {
-      console.error("Erro ao buscar fichas do jogador:", error);
-    }
-  };
-
-  const carregarMesa = async () => {
+  const carregarDados = useCallback(async () => {
     try {
       const responseMesa = await api.get(`/mesas/${tenantId}`);
-      setMesa(responseMesa.data);
+      const dadosMesa = responseMesa.data;
+      setMesa(dadosMesa);
 
-      if (responseMesa.data.isMestre) {
-        carregarSolicitacoes();
+      if (dadosMesa.isMestre) {
+        const [resSol, resFichas, resJogadores] = await Promise.allSettled([
+          api.get(`/mesas/${tenantId}/solicitacoes`),
+          api.get(`/characters/mesa/${tenantId}`),
+          api.get(`/mesas/${tenantId}/jogadores`),
+        ]);
+        if (resSol.status === "fulfilled") {
+          setSolicitacoes(Array.isArray(resSol.value.data) ? resSol.value.data : []);
+        }
+        if (resFichas.status === "fulfilled") {
+          setFichas(Array.isArray(resFichas.value.data) ? resFichas.value.data : []);
+        }
+        if (resJogadores.status === "fulfilled") {
+          setJogadoresMesa(
+            Array.isArray(resJogadores.value.data) ? resJogadores.value.data : []
+          );
+        }
       } else {
-        carregarMinhasFichas();
+        const resMinhas = await api.get(`/characters/mesa/${tenantId}/minhas`);
+        setFichas(Array.isArray(resMinhas.data) ? resMinhas.data : []);
       }
     } catch {
-      alert("Erro ao carregar a mesa. O feitiço foi dissipado.");
       navigate("/lobby");
     }
-  };
+  }, [tenantId, navigate]);
 
   useEffect(() => {
     if (!tenantId) {
       navigate("/lobby");
       return;
     }
-    carregarMesa();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tenantId, navigate]);
 
-  // ==========================================
-  // RADAR DO JOGADOR (SIGNALR NO LOBBY)
-  // ==========================================
+    let ativo = true;
+    const inicializar = async () => {
+      await Promise.resolve();
+      if (ativo) {
+        await carregarDados();
+      }
+    };
+    void inicializar();
+
+    return () => {
+      ativo = false;
+    };
+  }, [tenantId, navigate, carregarDados]);
+
   useEffect(() => {
     if (!mesa || mesa.isMestre) return;
 
@@ -65,41 +75,18 @@ export function Campanha() {
       .withAutomaticReconnect()
       .build();
 
-    const startConnection = async () => {
-      try {
-        await conexao.start();
-
+    conexao
+      .start()
+      .then(async () => {
         if (tenantId) {
-          try {
-            await conexao.invoke("EntrarNaMesa", tenantId);
-          } catch (err) {
-            console.error("Falha ao invocar EntrarNaMesa:", err);
-          }
+          await conexao.invoke("EntrarNaMesa", tenantId).catch(() => {});
         }
-
-        conexao.on("ReceberConvocacao", () => {
-          setConviteAberto(true);
-        });
-
+        conexao.on("ReceberConvocacao", () => setConviteAberto(true));
         conexao.on("ModoBatalhaAlterado", (emBatalha) => {
           if (emBatalha) setConviteAberto(true);
         });
-
-        conexao.onreconnected(async () => {
-          if (tenantId) {
-            try {
-              await conexao.invoke("EntrarNaMesa", tenantId);
-            } catch (err) {
-              console.error("Erro ao reentrar no grupo após reconexão:", err);
-            }
-          }
-        });
-      } catch (err) {
-        console.error("Erro no radar da Taverna:", err);
-      }
-    };
-
-    startConnection();
+      })
+      .catch(() => {});
 
     return () => {
       conexao.stop().catch(() => {});
@@ -109,272 +96,361 @@ export function Campanha() {
   const avaliarJogador = async (solicitacaoId, aprovar) => {
     try {
       await api.put(
-        `/mesas/avaliar-solicitacao/${solicitacaoId}?aprovar=${aprovar}`,
+        `/mesas/avaliar-solicitacao/${solicitacaoId}?aprovar=${aprovar}`
       );
-      setSolicitacoes(solicitacoes.filter((s) => s.id !== solicitacaoId));
-      alert(
-        aprovar ? "Jogador aceito na guilda!" : "Jogador expulso da taverna.",
-      );
-    } catch (error) {
-      console.error("Erro ao avaliar jogador:", error);
-      alert("Erro ao avaliar o jogador.");
+      setSolicitacoes((prev) => prev.filter((s) => s.id !== solicitacaoId));
+      if (aprovar) {
+        const resJog = await api.get(`/mesas/${tenantId}/jogadores`).catch(() => null);
+        if (resJog?.data) setJogadoresMesa(resJog.data);
+      }
+    } catch {
+      // ignora
     }
   };
 
-  const voltarParaLobby = () => {
-    localStorage.removeItem("tenantId");
-    navigate("/lobby");
+  const alterarStatusFicha = async (id, status) => {
+    try {
+      await api.patch(`/characters/${id}/status`, status, {
+        headers: { "Content-Type": "application/json" },
+      });
+      setFichas((prev) =>
+        prev.map((p) => (p.id === id ? { ...p, status } : p))
+      );
+    } catch {
+      // ignora
+    }
   };
 
-  if (!mesa)
+  const atribuirJogador = async (fichaId, usuarioId) => {
+    try {
+      await api.patch(`/characters/${fichaId}/atribuir`, usuarioId, {
+        headers: { "Content-Type": "application/json" },
+      });
+      setFichas((prev) =>
+        prev.map((p) => (p.id === fichaId ? { ...p, usuarioId } : p))
+      );
+    } catch {
+      // ignora
+    }
+  };
+
+  const carregarExemplosProntos = async () => {
+    setGerandoPadroes(true);
+    try {
+      const res = await api.post(`/characters/mesa/${tenantId}/padroes`);
+      if (Array.isArray(res.data)) setFichas(res.data);
+    } catch {
+      await carregarDados();
+    } finally {
+      setGerandoPadroes(false);
+    }
+  };
+
+  const copiarCodigo = async () => {
+    if (!mesa?.codigoConvite) return;
+    try {
+      await navigator.clipboard.writeText(mesa.codigoConvite);
+      setCodigoCopiado(true);
+      setTimeout(() => setCodigoCopiado(false), 1800);
+    } catch {
+      // ignora
+    }
+  };
+
+  if (!mesa) {
     return (
-      <div className="min-h-screen bg-zinc-950 text-white flex items-center justify-center">
-        Carregando pergaminhos...
+      <div className="min-h-screen owlbear-canvas-bg text-zinc-400 flex items-center justify-center text-sm">
+        Carregando sala...
       </div>
     );
+  }
 
   return (
-    <div className="min-h-screen bg-zinc-950 text-zinc-100 flex flex-col relative">
-      {/* MODAL DE CONVITE PARA O GRID */}
+    <div className="min-h-screen owlbear-canvas-bg text-zinc-100 flex flex-col">
+      {/* Aviso quando o Mestre chama para a mesa */}
       {conviteAberto && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm">
-          <div className="bg-zinc-900 border border-red-900 rounded-xl p-8 max-w-md text-center shadow-[0_0_50px_rgba(185,28,28,0.3)] animate-pulse">
-            <h2 className="text-3xl font-bold text-red-500 mb-4">
-              ⚔️ A Batalha Vai Começar!
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4">
+          <div className="bg-zinc-900 border border-indigo-500/40 rounded-2xl p-6 max-w-sm w-full text-center shadow-2xl space-y-4">
+            <h2 className="text-lg font-bold text-white">
+              Sessão em andamento
             </h2>
-            <p className="text-zinc-300 mb-8 font-medium text-lg">
-              O Mestre tocou a trombeta e está te convocando para o grid. Deseja
-              ingressar na sessão agora?
+            <p className="text-zinc-400 text-xs leading-relaxed">
+              O Mestre iniciou uma cena na mesa virtual. Deseja entrar agora?
             </p>
-            <div className="flex flex-col gap-3">
-              <button
-                onClick={() => navigate("/sessao-ativa")}
-                className="bg-red-700 hover:bg-red-600 text-white font-bold py-3 px-6 rounded-lg transition-colors text-lg"
-              >
-                Atender ao Chamado
-              </button>
+            <div className="flex gap-2">
               <button
                 onClick={() => setConviteAberto(false)}
-                className="bg-zinc-800 hover:bg-zinc-700 text-zinc-400 py-2 px-6 rounded-lg transition-colors border border-zinc-700"
+                className="flex-1 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 py-2.5 rounded-xl text-xs font-medium"
               >
-                Aguardar na Taverna
+                Depois
+              </button>
+              <button
+                onClick={() => navigate("/sessao-ativa")}
+                className="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold py-2.5 rounded-xl text-xs"
+              >
+                Abrir Mesa
               </button>
             </div>
           </div>
         </div>
       )}
 
-      <header className="bg-zinc-900 border-b border-zinc-800 p-3.5 sm:p-4 shadow-md">
-        <div className="max-w-7xl mx-auto flex flex-wrap justify-between items-center gap-2">
-          <div className="flex items-center space-x-2.5 sm:space-x-4 min-w-0">
+      {/* Cabeçalho Unificado */}
+      <header className="border-b border-white/5 bg-zinc-950/70 backdrop-blur-md">
+        <div className="max-w-5xl mx-auto px-4 sm:px-6 py-3.5 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0">
             <button
-              onClick={voltarParaLobby}
-              className="text-xs sm:text-sm text-zinc-400 hover:text-white transition-colors shrink-0"
+              onClick={() => navigate("/lobby")}
+              className="px-3 py-1.5 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-white/10 text-xs text-zinc-300 transition-colors shrink-0"
             >
-              ← Lobby
+              ← Salas
             </button>
-            <h1 className="text-lg sm:text-2xl font-bold text-red-600 uppercase tracking-wider border-l border-zinc-700 pl-2.5 sm:pl-4 truncate">
-              {mesa.nome}
-            </h1>
+            <div className="min-w-0">
+              <h1 className="text-base sm:text-lg font-bold text-white truncate">
+                {mesa.nome}
+              </h1>
+            </div>
           </div>
-          <div className="text-xs sm:text-sm text-zinc-400 font-mono bg-zinc-950 px-2.5 py-1 rounded border border-zinc-800">
-            Código: {mesa.codigoConvite}
+
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => void copiarCodigo()}
+              className="px-3 py-2 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-white/10 text-xs font-mono text-zinc-300 transition-colors"
+              title="Copiar código para convidar amigos"
+            >
+              {codigoCopiado
+                ? "✓ Código copiado"
+                : `Convite: #${mesa.codigoConvite}`}
+            </button>
+
+            <button
+              onClick={() => navigate("/sessao-ativa")}
+              className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold transition-colors shadow-lg shadow-indigo-950/40"
+            >
+              Abrir Mesa →
+            </button>
           </div>
         </div>
       </header>
 
-      <main className="flex-1 max-w-7xl w-full mx-auto p-3.5 sm:p-6">
-        {mesa.isMestre ? (
-          <div className="space-y-6 sm:space-y-8">
-            <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-5 sm:p-8 text-center shadow-lg">
-              <h2 className="text-2xl sm:text-3xl font-bold text-zinc-100 mb-2">
-                Painel do Mestre
+      <main className="max-w-5xl w-full mx-auto px-4 sm:px-6 py-8 space-y-6">
+        {/* Solicitações de entrada pendentes (Mestre) */}
+        {mesa.isMestre && solicitacoes.length > 0 && (
+          <section className="bg-indigo-950/25 border border-indigo-500/30 rounded-2xl p-5 space-y-3">
+            <div className="flex items-center justify-between">
+              <h2 className="text-sm font-bold text-indigo-300">
+                Pedidos para entrar na sala ({solicitacoes.length})
               </h2>
-              <p className="text-sm sm:text-base text-zinc-400 mb-6 sm:mb-8">
-                Controle o destino dos seus aventureiros e prepare o mundo.
-              </p>
-
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5 sm:gap-6">
-                <button
-                  onClick={() => navigate("/criar-ficha")}
-                  className="bg-zinc-800 hover:bg-zinc-700 text-zinc-200 py-3.5 sm:py-4 px-5 rounded-lg font-bold border border-zinc-700 transition-all shadow-md text-sm sm:text-base"
-                >
-                  🧙‍♂️ Criar Personagem/NPC
-                </button>
-                <button
-                  onClick={() => navigate("/aprovacao-fichas")}
-                  className="bg-zinc-800 hover:bg-zinc-700 text-zinc-200 py-3.5 sm:py-4 px-5 rounded-lg font-bold border border-zinc-700 transition-all shadow-md text-sm sm:text-base"
-                >
-                  🔗 Gerenciar & Aprovar Fichas
-                </button>
-                <button
-                  onClick={() => navigate("/sessao-ativa")}
-                  className="bg-red-700 hover:bg-red-600 text-white py-3.5 sm:py-4 px-5 rounded-lg font-bold transition-all shadow-lg shadow-red-900/20 text-sm sm:text-base"
-                >
-                  ⚔️ Iniciar Storytelling / Batalha
-                </button>
-              </div>
             </div>
-
-            {solicitacoes.length > 0 && (
-              <div className="bg-red-900/10 border border-red-900/40 rounded-xl p-4 sm:p-6">
-                <h3 className="text-lg sm:text-xl font-bold text-red-500 mb-2">
-                  Aventureiros na Taverna ({solicitacoes.length})
-                </h3>
-                <p className="text-xs sm:text-sm text-zinc-400 mb-4 sm:mb-6">
-                  Você tem solicitações pendentes. Libere a entrada deles para
-                  começarem a enviar fichas.
-                </p>
-                <div className="space-y-3">
-                  {solicitacoes.map((solic) => (
-                    <div
-                      key={solic.id}
-                      className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-zinc-900/80 border border-zinc-800 p-3.5 sm:p-4 rounded-lg shadow-sm"
-                    >
-                      <span className="text-sm text-zinc-300">
-                        🧙‍♂️ O jogador{" "}
-                        <strong className="text-white text-base sm:text-lg ml-1 mr-1">
-                          {solic.nomeJogador}
-                        </strong>{" "}
-                        quer entrar na guilda!
-                      </span>
-                      <div className="flex gap-2.5">
-                        <button
-                          onClick={() => avaliarJogador(solic.id, true)}
-                          className="flex-1 sm:flex-none bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-md text-xs sm:text-sm font-semibold transition-colors"
-                        >
-                          Permitir
-                        </button>
-                        <button
-                          onClick={() => avaliarJogador(solic.id, false)}
-                          className="flex-1 sm:flex-none bg-zinc-800 hover:bg-red-600 text-zinc-300 hover:text-white px-4 py-2 rounded-md text-xs sm:text-sm font-semibold transition-colors border border-zinc-700 hover:border-red-500"
-                        >
-                          Expulsar
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        ) : (
-          <div className="space-y-6 sm:space-y-8">
-            <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 sm:p-8 shadow-lg">
-              <div className="flex justify-between items-center mb-5 sm:mb-6">
-                <div>
-                  <h2 className="text-xl sm:text-2xl font-bold text-emerald-500 mb-1">
-                    Seus Personagens ({minhasFichas.length})
-                  </h2>
-                  <p className="text-zinc-400 text-xs sm:text-sm">
-                    Gerencie seus heróis desta campanha ou submeta uma nova ficha para o Mestre.
-                  </p>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-                {minhasFichas.map((ficha) => (
-                  <div
-                    key={ficha.id}
-                    className="bg-zinc-950 border border-zinc-800 rounded-xl p-5 flex flex-col justify-between shadow-md"
-                  >
-                    <div>
-                      <div className="flex justify-between items-start gap-2 mb-2">
-                        <h3 className="text-lg font-bold text-white uppercase truncate">
-                          {ficha.nome}
-                        </h3>
-                        {ficha.status === 0 ? (
-                          <span className="bg-amber-950 text-amber-400 border border-amber-800 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase">
-                            Pendente
-                          </span>
-                        ) : ficha.status === 1 ? (
-                          <span className="bg-emerald-950 text-emerald-400 border border-emerald-800 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase">
-                            Aprovado
-                          </span>
-                        ) : (
-                          <span className="bg-red-950 text-red-400 border border-red-800 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase">
-                            Rejeitado
-                          </span>
-                        )}
-                      </div>
-
-                      <p className="text-xs text-zinc-400 mb-4">
-                        {ficha.raca || "Aventureiro"} • {ficha.classe || "Guerreiro"}{" "}
-                        (Nv {ficha.nivel || 1})
-                      </p>
-
-                      <div className="grid grid-cols-3 gap-2 text-center mb-4">
-                        <div className="bg-zinc-900 border border-zinc-800 p-2 rounded">
-                          <span className="block text-[9px] text-zinc-500 uppercase">
-                            PV
-                          </span>
-                          <span className="text-sm font-bold text-emerald-400">
-                            {ficha.pontosDeVidaAtuais}/{ficha.pontosDeVidaMaximos}
-                          </span>
-                        </div>
-                        <div className="bg-zinc-900 border border-zinc-800 p-2 rounded">
-                          <span className="block text-[9px] text-zinc-500 uppercase">
-                            CA
-                          </span>
-                          <span className="text-sm font-bold text-white">
-                            🛡️ {ficha.classeArmadura}
-                          </span>
-                        </div>
-                        <div className="bg-zinc-900 border border-zinc-800 p-2 rounded">
-                          <span className="block text-[9px] text-zinc-500 uppercase">
-                            Desloc.
-                          </span>
-                          <span className="text-sm font-bold text-sky-400">
-                            {ficha.deslocamento || 9}m
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-2 pt-3 border-t border-zinc-800">
-                      <button
-                        onClick={() => navigate(`/ficha/${ficha.id}`)}
-                        className="bg-zinc-900 hover:bg-zinc-800 text-zinc-300 py-2 rounded text-xs font-bold border border-zinc-700 transition-colors"
-                      >
-                        📜 Ver Ficha
-                      </button>
-                      <button
-                        onClick={() => navigate(`/ficha/${ficha.id}/editar`)}
-                        className="bg-zinc-800 hover:bg-zinc-700 text-emerald-400 py-2 rounded text-xs font-bold border border-zinc-700 transition-colors"
-                      >
-                        ✏️ Editar
-                      </button>
-                    </div>
-                  </div>
-                ))}
-
+            <div className="space-y-2">
+              {solicitacoes.map((solic) => (
                 <div
-                  onClick={() => navigate("/criar-ficha")}
-                  className="border-2 border-dashed border-zinc-700 rounded-xl p-6 flex flex-col items-center justify-center text-zinc-500 hover:text-emerald-500 hover:border-emerald-500 transition-colors cursor-pointer min-h-[190px]"
+                  key={solic.id}
+                  className="flex flex-wrap items-center justify-between gap-3 bg-zinc-900/90 border border-white/10 px-4 py-3 rounded-xl"
                 >
-                  <span className="text-3xl mb-2">+</span>
-                  <span className="font-bold">Submeter Nova Ficha</span>
+                  <span className="text-xs sm:text-sm text-zinc-200">
+                    <strong>{solic.nomeJogador}</strong> pediu para participar
+                  </span>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => void avaliarJogador(solic.id, false)}
+                      className="px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-xs font-medium"
+                    >
+                      Recusar
+                    </button>
+                    <button
+                      onClick={() => void avaliarJogador(solic.id, true)}
+                      className="px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold"
+                    >
+                      Aceitar
+                    </button>
+                  </div>
                 </div>
-              </div>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {/* Lista de Fichas / Personagens da Sala */}
+        <section className="space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 className="text-lg font-bold text-white">
+                {mesa.isMestre
+                  ? `Personagens & Monstros (${fichas.length})`
+                  : `Seus Personagens (${fichas.length})`}
+              </h2>
+              <p className="text-xs text-zinc-400">
+                {mesa.isMestre
+                  ? "Crie fichas, aprove personagens dos jogadores ou carregue exemplos prontos para usar no mapa."
+                  : "Crie ou edite sua ficha para utilizá-la no tabuleiro."}
+              </p>
             </div>
 
-            <div className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-8 text-center space-y-4">
-              <h3 className="text-xl font-bold text-zinc-300">
-                Sessão & Tabuleiro de Batalha
-              </h3>
-              <p className="text-zinc-500">
-                Mantenha seus machados afiados. Quando o mestre iniciar o
-                encontro, o chamado surgirá nesta tela, ou você já pode entrar na sala ativa.
-              </p>
+            <div className="flex items-center gap-2">
+              {mesa.isMestre && (
+                <button
+                  onClick={() => void carregarExemplosProntos()}
+                  disabled={gerandoPadroes}
+                  className="px-3.5 py-2 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-white/10 text-zinc-200 text-xs font-medium transition-colors"
+                >
+                  {gerandoPadroes ? "Carregando..." : "Carregar Exemplos Prontos"}
+                </button>
+              )}
               <button
-                onClick={() => navigate("/sessao-ativa")}
-                className="bg-red-700 hover:bg-red-600 text-white font-bold py-3 px-8 rounded-lg transition-colors shadow-lg shadow-red-900/20"
+                onClick={() => navigate("/criar-ficha")}
+                className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold transition-colors"
               >
-                ⚔️ Entrar na Sessão / Tabuleiro
+                + Novo Personagem
               </button>
             </div>
           </div>
-        )}
+
+          {fichas.length === 0 ? (
+            <div className="bg-zinc-900/60 border border-white/10 rounded-2xl p-10 text-center">
+              <p className="text-sm text-zinc-300 font-medium mb-1">
+                Nenhum personagem cadastrado ainda
+              </p>
+              <p className="text-xs text-zinc-500 mb-5">
+                Você já pode abrir a mesa virtual livremente ou criar uma ficha agora.
+              </p>
+              <div className="flex justify-center gap-2">
+                {mesa.isMestre && (
+                  <button
+                    onClick={() => void carregarExemplosProntos()}
+                    className="px-4 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-medium"
+                  >
+                    Adicionar Heróis & Monstros Prontos
+                  </button>
+                )}
+                <button
+                  onClick={() => navigate("/criar-ficha")}
+                  className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold"
+                >
+                  + Criar Personagem
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {fichas.map((ficha) => (
+                <div
+                  key={ficha.id}
+                  className="bg-zinc-900/85 border border-white/10 rounded-2xl p-4 flex flex-col justify-between gap-4"
+                >
+                  <div className="space-y-3">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <h3 className="text-sm font-bold text-white truncate">
+                          {ficha.nome}
+                        </h3>
+                        <p className="text-xs text-zinc-400 truncate">
+                          {ficha.raca || "Aventureiro"} • {ficha.classe || "Guerreiro"} (Nv{" "}
+                          {ficha.nivel || 1})
+                        </p>
+                      </div>
+
+                      {ficha.status === 0 ? (
+                        <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/30 shrink-0">
+                          Aguardando
+                        </span>
+                      ) : ficha.status === 2 ? (
+                        <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-red-500/15 text-red-300 border border-red-500/30 shrink-0">
+                          Recusado
+                        </span>
+                      ) : (
+                        <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 shrink-0">
+                          Pronto
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-2 text-center">
+                      <div className="bg-zinc-950/80 border border-white/5 py-1.5 rounded-xl">
+                        <span className="block text-[10px] text-zinc-500">PV</span>
+                        <span className="text-xs font-bold text-emerald-400">
+                          {ficha.pontosDeVidaAtuais}/{ficha.pontosDeVidaMaximos}
+                        </span>
+                      </div>
+                      <div className="bg-zinc-950/80 border border-white/5 py-1.5 rounded-xl">
+                        <span className="block text-[10px] text-zinc-500">CA</span>
+                        <span className="text-xs font-bold text-zinc-100">
+                          {ficha.classeArmadura}
+                        </span>
+                      </div>
+                      <div className="bg-zinc-950/80 border border-white/5 py-1.5 rounded-xl">
+                        <span className="block text-[10px] text-zinc-500">Mov.</span>
+                        <span className="text-xs font-bold text-sky-400">
+                          {ficha.deslocamento || 9}m
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Controle de dono da ficha (apenas Mestre) */}
+                    {mesa.isMestre && (
+                      <div>
+                        <label className="block text-[10px] text-zinc-500 mb-1">
+                          Controlado por
+                        </label>
+                        <select
+                          value={ficha.usuarioId || ""}
+                          onChange={(e) =>
+                            void atribuirJogador(
+                              ficha.id,
+                              e.target.value ? parseInt(e.target.value, 10) : null
+                            )
+                          }
+                          className="w-full bg-zinc-950 border border-white/10 rounded-xl px-2.5 py-1.5 text-xs text-zinc-200 focus:outline-none focus:border-indigo-500"
+                        >
+                          <option value="">Mestre (NPC / Monstro)</option>
+                          {jogadoresMesa.map((jog) => (
+                            <option key={jog.id} value={jog.id}>
+                              {jog.nome}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="space-y-2 pt-2 border-t border-white/5">
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        onClick={() => navigate(`/ficha/${ficha.id}`)}
+                        className="py-1.5 rounded-xl bg-zinc-800/80 hover:bg-zinc-800 text-zinc-200 text-xs font-medium transition-colors"
+                      >
+                        Ver
+                      </button>
+                      <button
+                        onClick={() => navigate(`/ficha/${ficha.id}/editar`)}
+                        className="py-1.5 rounded-xl bg-zinc-800/80 hover:bg-zinc-800 text-indigo-300 text-xs font-medium transition-colors"
+                      >
+                        Editar
+                      </button>
+                    </div>
+
+                    {mesa.isMestre && ficha.status === 0 && (
+                      <div className="grid grid-cols-2 gap-2">
+                        <button
+                          onClick={() => void alterarStatusFicha(ficha.id, 2)}
+                          className="py-1.5 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-300 text-xs font-medium"
+                        >
+                          Recusar
+                        </button>
+                        <button
+                          onClick={() => void alterarStatusFicha(ficha.id, 1)}
+                          className="py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold"
+                        >
+                          Aprovar
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
       </main>
     </div>
   );

@@ -1,8 +1,10 @@
 import { useState, useEffect, useMemo } from "react";
+import { useNavigate } from "react-router-dom";
 import { api, obterUsuarioLogado } from "../services/api";
 import { FichaModal } from "../pages/FichaModel";
 import {
   calcularDistanciaMetros,
+  calcularQuadradosDistancia,
   calcularModificador,
   rolarDado,
   rolarExpressaoDados,
@@ -14,11 +16,22 @@ import {
 } from "../data/dndPresets";
 
 const CONDICOES_DND = [
-  { id: "abencoado", nome: "Abençoado (+1d4)", icone: "✨", desc: "Soma +1d4 nas rolagens de ataque." },
-  { id: "envenenado", nome: "Envenenado", icone: "🤢", desc: "Desvantagem nas rolagens de ataque." },
-  { id: "caido", nome: "Caído (Prone)", icone: "🔻", desc: "Ataques corpo a corpo contra têm Vantagem." },
-  { id: "atordoado", nome: "Atordoado", icone: "💫", desc: "Incapaz de agir; ataques contra têm Vantagem." },
-  { id: "concentrando", nome: "Concentração", icone: "🧠", desc: "Mantendo magia ativa de concentração." },
+  { id: "abencoado", nome: "Abençoado", icone: "✨" },
+  { id: "envenenado", nome: "Envenenado", icone: "🤢" },
+  { id: "caido", nome: "Caído", icone: "🔻" },
+  { id: "atordoado", nome: "Atordoado", icone: "💫" },
+  { id: "concentrando", nome: "Concentração", icone: "🧠" },
+];
+
+const PERICIAS_RAPIDAS = [
+  { key: "percepcao", label: "Percepção", attr: "sabedoria" },
+  { key: "investigacao", label: "Investigação", attr: "inteligencia" },
+  { key: "furtividade", label: "Furtividade", attr: "destreza" },
+  { key: "intuicao", label: "Intuição", attr: "sabedoria" },
+  { key: "persuasao", label: "Persuasão", attr: "carisma" },
+  { key: "atletismo", label: "Atletismo", attr: "forca" },
+  { key: "acrobacia", label: "Acrobacia", attr: "destreza" },
+  { key: "arcanismo", label: "Arcanismo", attr: "inteligencia" },
 ];
 
 const ICONES_CLASSES = {
@@ -56,69 +69,144 @@ const obterIconeFicha = (ficha, faccao) => {
   return faccao === "inimigo" ? "👹" : "⚔️";
 };
 
+const detectarFaccaoFicha = (ficha) => {
+  const c = ((ficha?.classe || "") + " " + (ficha?.antecedente || "")).toLowerCase();
+  if (c.includes("inimigo") || c.includes("chefe") || c.includes("monstro")) {
+    return "inimigo";
+  }
+  return "heroi";
+};
+
+const gerarIdUnico = (prefixo = "id") =>
+  `${prefixo}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+
+const horarioCurto = () =>
+  new Date().toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+
+const lerEstadoLocalSala = (tenantId) => {
+  if (!tenantId) return null;
+  try {
+    const salvo = localStorage.getItem(`rolemaster_batalha_${tenantId}`);
+    return salvo ? JSON.parse(salvo) : null;
+  } catch {
+    return null;
+  }
+};
+
 export function TabuleiroBatalha({
   tenantId,
+  mesaInfo,
   isMestre,
   conexaoSignalR,
+  solicitacoes = [],
+  onAvaliarSolicitacao,
   midias = [],
-  cenaStorytelling = "",
-  estadoExterno,
-  onVoltarStorytelling,
+  uploadingMidia = false,
+  onUploadMidia,
+  onExcluirMidia,
+  onTransmitirCena,
+  audioAtivo = "",
+  volume = 0.5,
+  onTocarMusica,
+  onAlterarVolume,
 }) {
+  const navigate = useNavigate();
   const usuarioLogado = obterUsuarioLogado();
 
-  // === FICHAS E CENÁRIOS ===
+  // === DADOS DA SALA (FICHAS E CENÁRIOS) ===
   const [fichasMesa, setFichasMesa] = useState([]);
   const [carregandoFichas, setCarregandoFichas] = useState(false);
   const [cenariosSalvos, setCenariosSalvos] = useState([]);
 
-  // === ESTADO DO CENÁRIO ATUAL ===
-  const [cenarioAtual, setCenarioAtual] = useState(() => ({
-    id: CENARIOS_PADROES[0].id,
-    nome: CENARIOS_PADROES[0].nome,
-    tema: CENARIOS_PADROES[0].tema,
-    largura: CENARIOS_PADROES[0].largura,
-    altura: CENARIOS_PADROES[0].altura,
-    fundoUrl: cenaStorytelling || "",
-    props: [...CENARIOS_PADROES[0].props],
-  }));
+  // === CENÁRIO ATUAL (UNIFICADO: MAPA, GRADE E OBJETOS) ===
+  const [cenarioAtual, setCenarioAtual] = useState(() => {
+    const salvo = lerEstadoLocalSala(tenantId);
+    if (salvo?.cenarioAtual) {
+      return {
+        mostrarGrade: true,
+        ...salvo.cenarioAtual,
+      };
+    }
+    return {
+      id: CENARIOS_PADROES[0].id,
+      nome: CENARIOS_PADROES[0].nome,
+      tema: CENARIOS_PADROES[0].tema,
+      largura: CENARIOS_PADROES[0].largura,
+      altura: CENARIOS_PADROES[0].altura,
+      fundoUrl: "",
+      mostrarGrade: true,
+      props: [...CENARIOS_PADROES[0].props],
+    };
+  });
 
-  // === ESTADO DE COMBATE ===
-  const [tokens, setTokens] = useState([]);
-  const [rodada, setRodada] = useState(1);
-  const [turnoIndex, setTurnoIndex] = useState(0);
-  const [combateIniciado, setCombateIniciado] = useState(false);
-  const [logsCombate, setLogsCombate] = useState([
-    {
-      id: "init",
-      tipo: "sistema",
-      texto: "⚔️ Tabuleiro tático D&D 5e aberto. Posicione os personagens e inicie a iniciativa!",
-      horario: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-    },
-  ]);
+  // === TOKENS E TURNOS (LIVRE POR PADRÃO, COMO NO OWLBEAR RODEO) ===
+  const [tokens, setTokens] = useState(() => {
+    const salvo = lerEstadoLocalSala(tenantId);
+    return Array.isArray(salvo?.tokens) ? salvo.tokens : [];
+  });
+  const [rodada, setRodada] = useState(() => {
+    const salvo = lerEstadoLocalSala(tenantId);
+    return typeof salvo?.rodada === "number" ? salvo.rodada : 1;
+  });
+  const [turnoIndex, setTurnoIndex] = useState(() => {
+    const salvo = lerEstadoLocalSala(tenantId);
+    return typeof salvo?.turnoIndex === "number" ? salvo.turnoIndex : 0;
+  });
+  const [combateIniciado, setCombateIniciado] = useState(() => {
+    const salvo = lerEstadoLocalSala(tenantId);
+    return typeof salvo?.combateIniciado === "boolean"
+      ? salvo.combateIniciado
+      : false;
+  });
+  const [logsCombate, setLogsCombate] = useState(() => {
+    const salvo = lerEstadoLocalSala(tenantId);
+    return Array.isArray(salvo?.logsCombate) ? salvo.logsCombate : [];
+  });
+  const [rolagensSala, setRolagensSala] = useState([]);
 
-  // === INTERAÇÃO, ZOOM MOBILE E GAVETA RESPONSIVA ===
+  // === FERRAMENTAS E POPOVERS MINIMALISTAS ===
+  const [ferramenta, setFerramenta] = useState("mover"); // 'mover' | 'medir' | 'objetos' | 'alvo' | 'posicionar'
+  const [painelAberto, setPainelAberto] = useState(null); // null | 'grupo' | 'cenas' | 'dados' | 'historico' | 'dock' | 'turnosMenu'
+  const [abaCenas, setAbaCenas] = useState("mapas"); // 'mapas' | 'audio'
+  const [subMenuToken, setSubMenuToken] = useState(null); // null | 'acoes' | 'status'
+  const [codigoCopiado, setCodigoCopiado] = useState(false);
+
+  // === SELEÇÃO, ARRASTE, RÉGUA E ZOOM ===
   const [tokenSelecionadoId, setTokenSelecionadoId] = useState(null);
-  const [modoInteracao, setModoInteracao] = useState("mover"); // 'mover' | 'acao' | 'spawn' | 'prop'
   const [acaoSelecionada, setAcaoSelecionada] = useState(null);
-  const [modoRolagemD20, setModoRolagemD20] = useState("normal");
-  const [abaLateral, setAbaLateral] = useState("combate"); // 'combate' | 'spawn' | 'cenario' | 'logs'
-  const [gavetaMobileAberta, setGavetaMobileAberta] = useState(false);
-  const [tamanhoCelula, setTamanhoCelula] = useState(() =>
-    typeof window !== "undefined" && window.innerWidth < 768 ? 40 : 50
-  );
-
-  // === CONTROLES DE SPAWN E EDITOR DE CENÁRIO (MESTRE) ===
-  const [fichaParaSpawnId, setFichaParaSpawnId] = useState("");
-  const [faccaoSpawn, setFaccaoSpawn] = useState("heroi");
+  const [fichaParaPosicionar, setFichaParaPosicionar] = useState(null);
   const [spawnOculto, setSpawnOculto] = useState(false);
   const [propSelecionado, setPropSelecionado] = useState(PROPS_CATALOGO[0]);
   const [modoBorrachaProp, setModoBorrachaProp] = useState(false);
   const [nomeNovoCenario, setNomeNovoCenario] = useState("");
+  const [reguaInicio, setReguaInicio] = useState(null);
+  const [reguaFim, setReguaFim] = useState(null);
+  const [arrastandoItem, setArrastandoItem] = useState(null); // { tipo: 'token', id } | { tipo: 'ficha', ficha }
 
-  // === MODAL DE VISUALIZAÇÃO DE FICHA ===
+  const CELL_BASE = 48;
+  const [tamanhoCelula, setTamanhoCelula] = useState(() =>
+    typeof window !== "undefined" && window.innerWidth < 768 ? 42 : 48
+  );
+
+  // === DADOS / ROLAGENS E TOASTS EFÊMEROS ===
+  const [modoRolagemD20, setModoRolagemD20] = useState("normal");
+  const [fichaRolagemId, setFichaRolagemId] = useState("");
+  const [toastsVisiveis, setToastsVisiveis] = useState([]);
+
+  // === MODAL DE FICHA ===
   const [fichaModalAberta, setFichaModalAberta] = useState(false);
   const [fichaModalDados, setFichaModalDados] = useState({ id: null, objeto: null });
+
+  const dispararToast = (texto, variante = "info") => {
+    const id = gerarIdUnico("toast");
+    setToastsVisiveis((prev) => [{ id, texto, variante }, ...prev.slice(0, 2)]);
+    setTimeout(() => {
+      setToastsVisiveis((prev) => prev.filter((t) => t.id !== id));
+    }, 6000);
+  };
 
   const podeControlarToken = (tok) => {
     if (!tok) return false;
@@ -130,28 +218,29 @@ export function TabuleiroBatalha({
   };
 
   useEffect(() => {
-    if (!estadoExterno) return;
-    if (estadoExterno.cenarioAtual) setCenarioAtual(estadoExterno.cenarioAtual);
-    if (Array.isArray(estadoExterno.tokens)) setTokens(estadoExterno.tokens);
-    if (typeof estadoExterno.rodada === "number") setRodada(estadoExterno.rodada);
-    if (typeof estadoExterno.turnoIndex === "number") setTurnoIndex(estadoExterno.turnoIndex);
-    if (typeof estadoExterno.combateIniciado === "boolean")
-      setCombateIniciado(estadoExterno.combateIniciado);
-    if (Array.isArray(estadoExterno.logsCombate)) setLogsCombate(estadoExterno.logsCombate);
-  }, [estadoExterno]);
-
-  useEffect(() => {
     if (!conexaoSignalR) return;
 
-    const handleEstadoAtualizado = (novoEstado) => {
+    const aplicarEstadoRemoto = (novoEstado) => {
       if (!novoEstado) return;
-      if (novoEstado.cenarioAtual) setCenarioAtual(novoEstado.cenarioAtual);
+      if (novoEstado.cenarioAtual) {
+        setCenarioAtual({ mostrarGrade: true, ...novoEstado.cenarioAtual });
+      }
       if (Array.isArray(novoEstado.tokens)) setTokens(novoEstado.tokens);
       if (typeof novoEstado.rodada === "number") setRodada(novoEstado.rodada);
-      if (typeof novoEstado.turnoIndex === "number") setTurnoIndex(novoEstado.turnoIndex);
+      if (typeof novoEstado.turnoIndex === "number")
+        setTurnoIndex(novoEstado.turnoIndex);
       if (typeof novoEstado.combateIniciado === "boolean")
         setCombateIniciado(novoEstado.combateIniciado);
-      if (Array.isArray(novoEstado.logsCombate)) setLogsCombate(novoEstado.logsCombate);
+      if (Array.isArray(novoEstado.logsCombate))
+        setLogsCombate(novoEstado.logsCombate);
+    };
+
+    const handleModoBatalha = (_emBatalha, estadoBatalha) => {
+      if (estadoBatalha) aplicarEstadoRemoto(estadoBatalha);
+    };
+
+    const handleNovaCena = (urlImagem) => {
+      setCenarioAtual((prev) => ({ ...prev, fundoUrl: urlImagem || "" }));
     };
 
     const handleTokenMovido = (tokenId, novoX, novoY, movimentoRestante) => {
@@ -163,7 +252,7 @@ export function TabuleiroBatalha({
     };
 
     const handleCenarioAtualizado = (novoCenario) => {
-      if (novoCenario) setCenarioAtual(novoCenario);
+      if (novoCenario) setCenarioAtual({ mostrarGrade: true, ...novoCenario });
     };
 
     const handleAcaoExecutada = (payload) => {
@@ -171,28 +260,124 @@ export function TabuleiroBatalha({
       if (Array.isArray(payload.tokens)) setTokens(payload.tokens);
       if (payload.log) {
         setLogsCombate((prev) => [payload.log, ...prev.slice(0, 49)]);
+        dispararToast(
+          payload.log.texto,
+          payload.log.tipo === "cura" ? "sucesso" : "dado"
+        );
       }
     };
 
-    conexaoSignalR.on("EstadoBatalhaAtualizado", handleEstadoAtualizado);
+    const handleRolagemRecebida = (rolagem) => {
+      if (!rolagem?.id) return;
+      setRolagensSala((prev) => {
+        if (prev.some((r) => r.id === rolagem.id)) return prev;
+        return [rolagem, ...prev.slice(0, 29)];
+      });
+      const texto = `🎲 ${rolagem.autor}: ${rolagem.titulo} → ${rolagem.total} ${rolagem.detalhe || ""}`;
+      dispararToast(
+        texto,
+        rolagem.critico ? "sucesso" : rolagem.falha ? "erro" : "dado"
+      );
+    };
+
+    conexaoSignalR.on("EstadoBatalhaAtualizado", aplicarEstadoRemoto);
+    conexaoSignalR.on("ModoBatalhaAlterado", handleModoBatalha);
+    conexaoSignalR.on("ReceberNovaCena", handleNovaCena);
     conexaoSignalR.on("TokenMovido", handleTokenMovido);
     conexaoSignalR.on("CenarioBatalhaAtualizado", handleCenarioAtualizado);
     conexaoSignalR.on("AcaoCombateExecutada", handleAcaoExecutada);
+    conexaoSignalR.on("ReceberRolagemStorytelling", handleRolagemRecebida);
 
     return () => {
-      conexaoSignalR.off("EstadoBatalhaAtualizado", handleEstadoAtualizado);
+      conexaoSignalR.off("EstadoBatalhaAtualizado", aplicarEstadoRemoto);
+      conexaoSignalR.off("ModoBatalhaAlterado", handleModoBatalha);
+      conexaoSignalR.off("ReceberNovaCena", handleNovaCena);
       conexaoSignalR.off("TokenMovido", handleTokenMovido);
       conexaoSignalR.off("CenarioBatalhaAtualizado", handleCenarioAtualizado);
       conexaoSignalR.off("AcaoCombateExecutada", handleAcaoExecutada);
+      conexaoSignalR.off("ReceberRolagemStorytelling", handleRolagemRecebida);
     };
   }, [conexaoSignalR]);
 
   useEffect(() => {
     if (!tenantId) return;
-    carregarFichasDaMesa();
-    carregarCenariosSalvos();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tenantId]);
+    let ativo = true;
+
+    const carregarDadosIniciais = async () => {
+      // 1. Fichas da sala
+      try {
+        const res = await api.get(`/characters/mesa/${tenantId}`);
+        if (ativo) {
+          const lista = Array.isArray(res.data) ? res.data : [];
+          setFichasMesa(lista);
+          if (lista.length > 0) {
+            const minha = lista.find(
+              (f) => Number(f.usuarioId) === Number(usuarioLogado?.id)
+            );
+            setFichaRolagemId((atual) =>
+              atual || String((minha || lista[0]).id)
+            );
+          }
+        }
+      } catch {
+        try {
+          const resMinhas = await api.get(`/characters/mesa/${tenantId}/minhas`);
+          if (ativo) {
+            const lista = Array.isArray(resMinhas.data) ? resMinhas.data : [];
+            setFichasMesa(lista);
+            if (lista.length > 0) {
+              setFichaRolagemId((atual) => atual || String(lista[0].id));
+            }
+          }
+        } catch {
+          // fallback silencioso
+        }
+      }
+
+      // 2. Cenários salvos da sala
+      const chaveLocal = `rolemaster_cenarios_${tenantId}`;
+      let locais = [];
+      try {
+        const bruto = localStorage.getItem(chaveLocal);
+        if (bruto) locais = JSON.parse(bruto);
+      } catch {
+        locais = [];
+      }
+
+      try {
+        const resCen = await api.get(`/cenarios/mesa/${tenantId}`);
+        if (ativo && Array.isArray(resCen.data) && resCen.data.length > 0) {
+          const doBanco = resCen.data.map((c) => ({
+            id: c.id,
+            nome: c.nome,
+            tema: c.tema || "masmorra",
+            largura: c.largura || 14,
+            altura: c.altura || 10,
+            fundoUrl: c.fundoUrl || "",
+            mostrarGrade: true,
+            props: (() => {
+              try {
+                return JSON.parse(c.propsJson || "[]");
+              } catch {
+                return [];
+              }
+            })(),
+          }));
+          setCenariosSalvos(doBanco);
+          return;
+        }
+      } catch {
+        // fallback local
+      }
+      if (ativo) setCenariosSalvos(locais);
+    };
+
+    void carregarDadosIniciais();
+
+    return () => {
+      ativo = false;
+    };
+  }, [tenantId, isMestre, usuarioLogado?.id]);
 
   const transmitirEstadoGeral = async (override = {}) => {
     const pacote = {
@@ -211,47 +396,27 @@ export function TabuleiroBatalha({
     }
 
     if (conexaoSignalR) {
-      try {
-        await conexaoSignalR.invoke("SincronizarEstadoBatalha", tenantId, pacote);
-      } catch (err) {
-        console.warn("Aviso ao sincronizar estado via SignalR:", err);
-      }
+      await conexaoSignalR
+        .invoke("SincronizarEstadoBatalha", tenantId, pacote)
+        .catch(() => {});
     }
   };
 
-  useEffect(() => {
-    if (!tenantId) return;
-    try {
-      const salvo = localStorage.getItem(`rolemaster_batalha_${tenantId}`);
-      if (salvo) {
-        const parsed = JSON.parse(salvo);
-        if (parsed.cenarioAtual) setCenarioAtual(parsed.cenarioAtual);
-        if (Array.isArray(parsed.tokens) && parsed.tokens.length > 0) setTokens(parsed.tokens);
-        if (typeof parsed.rodada === "number") setRodada(parsed.rodada);
-        if (typeof parsed.turnoIndex === "number") setTurnoIndex(parsed.turnoIndex);
-        if (typeof parsed.combateIniciado === "boolean") setCombateIniciado(parsed.combateIniciado);
-        if (Array.isArray(parsed.logsCombate) && parsed.logsCombate.length > 0)
-          setLogsCombate(parsed.logsCombate);
-      }
-    } catch {
-      // ignora
+  const registrarEvento = (tipo, texto, mostrarNotificacao = true) => {
+    const novoLog = {
+      id: gerarIdUnico("log"),
+      tipo,
+      texto,
+      horario: horarioCurto(),
+    };
+    setLogsCombate((prev) => [novoLog, ...prev.slice(0, 49)]);
+    if (mostrarNotificacao) {
+      dispararToast(
+        texto,
+        tipo === "cura" ? "sucesso" : tipo === "erro" ? "erro" : "dado"
+      );
     }
-  }, [tenantId]);
-
-  const carregarFichasDaMesa = async () => {
-    setCarregandoFichas(true);
-    try {
-      const res = await api.get(`/characters/mesa/${tenantId}`);
-      const lista = Array.isArray(res.data) ? res.data : [];
-      setFichasMesa(lista);
-      if (lista.length > 0 && !fichaParaSpawnId) {
-        setFichaParaSpawnId(String(lista[0].id));
-      }
-    } catch (err) {
-      console.warn("Usando fichas locais como fallback:", err);
-    } finally {
-      setCarregandoFichas(false);
-    }
+    return novoLog;
   };
 
   const gerarFichasPadroesNaMesa = async () => {
@@ -260,8 +425,7 @@ export function TabuleiroBatalha({
       const res = await api.post(`/characters/mesa/${tenantId}/padroes`);
       if (Array.isArray(res.data) && res.data.length > 0) {
         setFichasMesa(res.data);
-        setFichaParaSpawnId(String(res.data[0].id));
-        adicionarLog("sistema", "📜 Fichas padrões de D&D 5e carregadas e vinculadas à mesa!");
+        dispararToast("Heróis e monstros prontos adicionados!", "sucesso");
         return;
       }
     } catch {
@@ -283,14 +447,7 @@ export function TabuleiroBatalha({
               wisMod: calcularModificador(template.sabedoria),
               chaMod: calcularModificador(template.carisma),
             });
-            criadas.push({
-              ...template,
-              ...resp.data,
-              equipamento: resp.data.equipamento?.length
-                ? resp.data.equipamento
-                : template.equipamento,
-              magia: resp.data.magia?.length ? resp.data.magia : template.magia,
-            });
+            criadas.push({ ...template, ...resp.data });
           } catch {
             criadas.push({
               ...template,
@@ -302,60 +459,94 @@ export function TabuleiroBatalha({
         }
       }
       setFichasMesa(criadas);
-      if (criadas.length > 0) {
-        setFichaParaSpawnId(String(criadas[0].id));
-      }
-      adicionarLog("sistema", "📜 Fichas padrões D&D 5e forjadas e prontas para combate!");
+      dispararToast("Exemplos de personagens carregados!", "sucesso");
     } finally {
       setCarregandoFichas(false);
     }
   };
 
-  const carregarCenariosSalvos = async () => {
-    const chaveLocal = `rolemaster_cenarios_${tenantId}`;
-    let locais = [];
+  const aprovarFichaRapido = async (fichaId) => {
     try {
-      const bruto = localStorage.getItem(chaveLocal);
-      if (bruto) locais = JSON.parse(bruto);
+      await api.patch(`/characters/${fichaId}/status`, 1, {
+        headers: { "Content-Type": "application/json" },
+      });
+      setFichasMesa((prev) =>
+        prev.map((f) => (f.id === fichaId ? { ...f, status: 1 } : f))
+      );
+      dispararToast("Ficha aprovada!", "sucesso");
     } catch {
-      locais = [];
+      // silencioso
     }
+  };
 
-    try {
-      const res = await api.get(`/cenarios/mesa/${tenantId}`);
-      if (Array.isArray(res.data)) {
-        const doBanco = res.data.map((c) => ({
-          id: c.id,
-          nome: c.nome,
-          tema: c.tema || "masmorra",
-          largura: c.largura || 14,
-          altura: c.altura || 10,
-          fundoUrl: c.fundoUrl || "",
-          props: (() => {
-            try {
-              return JSON.parse(c.propsJson || "[]");
-            } catch {
-              return [];
-            }
-          })(),
-        }));
-        setCenariosSalvos(doBanco.length > 0 ? doBanco : locais);
-        return;
+  // === CENÁRIOS & GRADE ===
+  const alternarGrade = async () => {
+    const atualizado = {
+      ...cenarioAtual,
+      mostrarGrade: !cenarioAtual.mostrarGrade,
+    };
+    setCenarioAtual(atualizado);
+    if (isMestre) {
+      if (conexaoSignalR) {
+        await conexaoSignalR
+          .invoke("AtualizarCenarioBatalha", tenantId, atualizado)
+          .catch(() => {});
       }
-    } catch {
-      // fallback local
+      await transmitirEstadoGeral({ cenarioAtual: atualizado });
     }
-    setCenariosSalvos(locais);
+  };
+
+  const aplicarCenario = async (cenarioEscolhido) => {
+    const copia = {
+      mostrarGrade: cenarioAtual.mostrarGrade,
+      ...cenarioEscolhido,
+      props: Array.isArray(cenarioEscolhido.props)
+        ? [...cenarioEscolhido.props]
+        : [],
+    };
+    setCenarioAtual(copia);
+    if (onTransmitirCena && copia.fundoUrl !== undefined) {
+      void onTransmitirCena(copia.fundoUrl);
+    }
+    if (conexaoSignalR) {
+      await conexaoSignalR
+        .invoke("AtualizarCenarioBatalha", tenantId, copia)
+        .catch(() => {});
+    }
+    await transmitirEstadoGeral({ cenarioAtual: copia });
+    dispararToast(`Cena: ${copia.nome}`);
+  };
+
+  const definirImagemDeFundo = async (urlImagem, nomeCena = "Cena Customizada") => {
+    const atualizado = {
+      ...cenarioAtual,
+      nome: nomeCena,
+      fundoUrl: urlImagem,
+    };
+    setCenarioAtual(atualizado);
+    if (onTransmitirCena) {
+      await onTransmitirCena(urlImagem);
+    }
+    if (conexaoSignalR) {
+      await conexaoSignalR
+        .invoke("AtualizarCenarioBatalha", tenantId, atualizado)
+        .catch(() => {});
+    }
+    await transmitirEstadoGeral({ cenarioAtual: atualizado });
   };
 
   const salvarCenarioAtual = async () => {
-    const nomeFinal = (nomeNovoCenario || cenarioAtual.nome || "Cenário Customizado").trim();
+    const nomeFinal = (
+      nomeNovoCenario ||
+      cenarioAtual.nome ||
+      "Cena Salva"
+    ).trim();
     const objetoCenario = {
       ...cenarioAtual,
       id:
         cenarioAtual.id && !String(cenarioAtual.id).startsWith("preset-")
           ? cenarioAtual.id
-          : `custom-${Date.now()}`,
+          : gerarIdUnico("custom"),
       nome: nomeFinal,
     };
 
@@ -384,53 +575,21 @@ export function TabuleiroBatalha({
         fundoUrl: objetoCenario.fundoUrl || "",
         propsJson: JSON.stringify(objetoCenario.props || []),
       };
-
       if (typeof objetoCenario.id === "number") {
         await api.put(`/cenarios/${objetoCenario.id}`, payloadApi);
       } else {
         const res = await api.post("/cenarios", payloadApi);
-        if (res.data?.id) {
-          objetoCenario.id = res.data.id;
-        }
+        if (res.data?.id) objetoCenario.id = res.data.id;
       }
     } catch {
       // mantém local
     }
 
-    adicionarLog("sistema", `🗺️ Cenário "${nomeFinal}" salvo com sucesso!`);
+    dispararToast(`Cena "${nomeFinal}" salva!`, "sucesso");
     await transmitirEstadoGeral({ cenarioAtual: objetoCenario });
   };
 
-  const aplicarCenario = async (cenarioEscolhido) => {
-    const copia = {
-      ...cenarioEscolhido,
-      props: Array.isArray(cenarioEscolhido.props) ? [...cenarioEscolhido.props] : [],
-    };
-    setCenarioAtual(copia);
-    adicionarLog("sistema", `🗺️ O Mestre alterou o cenário para: ${copia.nome}`);
-
-    if (conexaoSignalR) {
-      try {
-        await conexaoSignalR.invoke("AtualizarCenarioBatalha", tenantId, copia);
-      } catch {
-        // fallback
-      }
-    }
-    await transmitirEstadoGeral({ cenarioAtual: copia });
-  };
-
-  const adicionarLog = (tipo, texto, extras = {}) => {
-    const novoLog = {
-      id: `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-      tipo,
-      texto,
-      horario: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-      ...extras,
-    };
-    setLogsCombate((prev) => [novoLog, ...prev.slice(0, 49)]);
-    return novoLog;
-  };
-
+  // === DERIVADOS DE TOKENS ===
   const tokensVisiveis = useMemo(
     () => (isMestre ? tokens : tokens.filter((t) => !t.oculto)),
     [tokens, isMestre]
@@ -465,8 +624,16 @@ export function TabuleiroBatalha({
     return Number((distBase + penalidadeTerreno).toFixed(1));
   };
 
-  const spawnarPersonagemNaCelula = async (x, y) => {
-    if (!isMestre) return;
+  // === SPAWN / POSICIONAMENTO DIRETO ===
+  const posicionarFichaNaCelula = async (fichaBase, x, y) => {
+    if (!fichaBase) return;
+    if (
+      !isMestre &&
+      Number(fichaBase.usuarioId) !== Number(usuarioLogado?.id)
+    ) {
+      return;
+    }
+
     const ocupado = tokens.find((t) => t.x === x && t.y === y);
     if (ocupado) {
       setTokenSelecionadoId(ocupado.id);
@@ -475,16 +642,8 @@ export function TabuleiroBatalha({
 
     const prop = propNaCelula(x, y);
     if (prop?.bloqueiaMovimento) {
-      return alert("Não é possível spawnar sobre um obstáculo que bloqueia movimento!");
-    }
-
-    const fichaBase = fichasMesa.find((f) => String(f.id) === String(fichaParaSpawnId));
-    if (!fichaBase) {
-      setGavetaMobileAberta(true);
-      setAbaLateral("spawn");
-      return alert(
-        "Selecione uma ficha na aba 'Fichas/Spawn' ou clique em '⚡ Gerar Fichas Padrões D&D' primeiro!"
-      );
+      dispararToast("Esse quadrado está bloqueado por um obstáculo.", "erro");
+      return;
     }
 
     let fichaCompleta = { ...fichaBase };
@@ -493,15 +652,18 @@ export function TabuleiroBatalha({
         const res = await api.get(`/characters/${fichaBase.id}`);
         fichaCompleta = res.data;
       } catch {
-        // usa a ficha base
+        // usa base
       }
     }
 
+    const faccao = detectarFaccaoFicha(fichaCompleta);
     const qtdMesmoNome = tokens.filter((t) =>
       t.nome.startsWith(fichaCompleta.nome)
     ).length;
     const nomeExibicao =
-      qtdMesmoNome > 0 ? `${fichaCompleta.nome} #${qtdMesmoNome + 1}` : fichaCompleta.nome;
+      qtdMesmoNome > 0
+        ? `${fichaCompleta.nome} #${qtdMesmoNome + 1}`
+        : fichaCompleta.nome;
 
     const modInit =
       fichaCompleta.iniciativa !== undefined && fichaCompleta.iniciativa !== null
@@ -518,14 +680,16 @@ export function TabuleiroBatalha({
         ? Number(fichaCompleta.pontosDeVidaAtuais)
         : hpMax;
 
+    const ocultoFinal = isMestre ? spawnOculto : false;
+
     const novoToken = {
-      id: `tok-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      id: gerarIdUnico("tok"),
       fichaId: fichaCompleta.id,
       nome: nomeExibicao,
-      faccao: faccaoSpawn,
-      oculto: spawnOculto,
+      faccao,
+      oculto: ocultoFinal,
       condicoes: [],
-      icone: obterIconeFicha(fichaCompleta, faccaoSpawn),
+      icone: obterIconeFicha(fichaCompleta, faccao),
       x,
       y,
       hpAtual,
@@ -544,29 +708,39 @@ export function TabuleiroBatalha({
       ficha: fichaCompleta,
     };
 
-    const novaListaTokens = [...tokens, novoToken].sort(
-      (a, b) => b.iniciativa - a.iniciativa
-    );
-
-    const logSpawn = spawnOculto
-      ? logsCombate[0]
-      : adicionarLog(
-          "spawn",
-          `🎲 ${nomeExibicao} entrou no campo de batalha em (${String.fromCharCode(65 + x)}${y + 1})! Iniciativa: ${iniciativaTotal} (1d20[${d20Init}] ${modInit >= 0 ? `+${modInit}` : modInit})`
-        );
+    const novaListaTokens = combateIniciado
+      ? [...tokens, novoToken].sort((a, b) => b.iniciativa - a.iniciativa)
+      : [...tokens, novoToken];
 
     setTokens(novaListaTokens);
     setTokenSelecionadoId(novoToken.id);
-    setModoInteracao("mover");
+    setFerramenta("mover");
+    setFichaParaPosicionar(null);
+
+    const novosLogs = ocultoFinal
+      ? logsCombate
+      : [
+          registrarEvento(
+            "spawn",
+            `${novoToken.icone} ${nomeExibicao} entrou no mapa`,
+            true
+          ),
+          ...logsCombate.slice(0, 48),
+        ];
 
     await transmitirEstadoGeral({
       tokens: novaListaTokens,
-      logsCombate: spawnOculto ? logsCombate : [logSpawn, ...logsCombate.slice(0, 49)],
+      logsCombate: novosLogs,
     });
   };
 
+  // === SINCRONIZAÇÃO E AJUSTE RÁPIDO DE VIDA ===
   const sincronizarHpNoBanco = async (tokenAtualizado) => {
-    if (!tokenAtualizado?.fichaId || typeof tokenAtualizado.fichaId !== "number") return;
+    if (
+      !tokenAtualizado?.fichaId ||
+      typeof tokenAtualizado.fichaId !== "number"
+    )
+      return;
     if (tokenAtualizado.nome.includes("#")) return;
 
     try {
@@ -577,65 +751,100 @@ export function TabuleiroBatalha({
         salvaguardaMorteFalhas: tokenAtualizado.morteFalhas || 0,
       });
     } catch {
-      try {
-        if (tokenAtualizado.ficha) {
-          await api.put(`/characters/${tokenAtualizado.fichaId}`, {
-            ...tokenAtualizado.ficha,
-            pontosDeVidaAtuais: tokenAtualizado.hpAtual,
-            pontosDeVidaTemporarios: tokenAtualizado.hpTemp || 0,
-            salvaguardaMorteSucessos: tokenAtualizado.morteSucessos || 0,
-            salvaguardaMorteFalhas: tokenAtualizado.morteFalhas || 0,
-          });
-        }
-      } catch {
-        // silencioso
-      }
+      // silencioso
     }
   };
 
-  const moverTokenParaCelula = async (x, y) => {
-    if (!tokenSelecionado) return;
-    if (!podeControlarToken(tokenSelecionado)) {
-      return alert("Você só pode mover os seus próprios personagens!");
-    }
-    if (tokenSelecionado.hpAtual <= 0) {
-      return alert("Personagens caídos (0 PV) não podem se mover!");
-    }
-    if ((tokenSelecionado.condicoes || []).includes("atordoado")) {
-      return alert("Este personagem está Atordoado e não pode se mover!");
-    }
-
-    const custo = custoMovimentoParaCelula(
-      tokenSelecionado.x,
-      tokenSelecionado.y,
-      x,
-      y
+  const ajustarHpRapido = async (delta) => {
+    if (!tokenSelecionado || !podeControlarToken(tokenSelecionado)) return;
+    const novoHp = Math.max(
+      0,
+      Math.min(tokenSelecionado.hpMax, tokenSelecionado.hpAtual + delta)
     );
-
-    if (custo === Infinity) return;
-    if (combateIniciado && custo > tokenSelecionado.movimentoRestante) {
-      return alert(
-        `Deslocamento insuficiente! Custo: ${custo}m | Restante: ${tokenSelecionado.movimentoRestante}m. Use a ação 'Disparada' para dobrar o movimento.`
-      );
-    }
-
-    const novoMovimento = combateIniciado
-      ? Number(Math.max(0, tokenSelecionado.movimentoRestante - custo).toFixed(1))
-      : tokenSelecionado.deslocamentoMax;
-
-    const propDestino = propNaCelula(x, y);
-    let danoFogo = 0;
-    let textoPerigo = "";
-
-    if (propDestino?.danoAmbiental) {
-      const rolagemPerigo = rolarExpressaoDados(propDestino.danoAmbiental);
-      danoFogo = rolagemPerigo.total;
-      textoPerigo = ` ⚠️ Sofreu ${danoFogo} de dano ambiental (${propDestino.nome}: ${rolagemPerigo.formula}[${rolagemPerigo.dados.join(",")}])!`;
-    }
+    if (novoHp === tokenSelecionado.hpAtual) return;
 
     const novosTokens = tokens.map((t) => {
       if (t.id !== tokenSelecionado.id) return t;
-      const novoHp = Math.max(0, t.hpAtual - danoFogo);
+      return {
+        ...t,
+        hpAtual: novoHp,
+        morteSucessos: novoHp > 0 ? 0 : t.morteSucessos,
+        morteFalhas: novoHp > 0 ? 0 : t.morteFalhas,
+        ficha: t.ficha ? { ...t.ficha, pontosDeVidaAtuais: novoHp } : t.ficha,
+      };
+    });
+
+    setTokens(novosTokens);
+    const atualizado = novosTokens.find((t) => t.id === tokenSelecionado.id);
+    void sincronizarHpNoBanco(atualizado);
+
+    const log = registrarEvento(
+      delta > 0 ? "cura" : "ataque",
+      `${tokenSelecionado.nome}: ${delta > 0 ? `+${delta}` : delta} PV (${novoHp}/${tokenSelecionado.hpMax})`,
+      false
+    );
+
+    await transmitirEstadoGeral({
+      tokens: novosTokens,
+      logsCombate: [log, ...logsCombate.slice(0, 48)],
+    });
+  };
+
+  // === MOVIMENTAÇÃO DE TOKEN (ARRASTAR OU CLICAR) ===
+  const moverTokenParaCelula = async (tokenAlvo, x, y) => {
+    const tok = tokenAlvo || tokenSelecionado;
+    if (!tok) return;
+    if (tok.x === x && tok.y === y) return;
+    if (!podeControlarToken(tok)) {
+      dispararToast("Você só pode mover seus próprios personagens.", "erro");
+      return;
+    }
+
+    const ocupado = tokens.find((t) => t.x === x && t.y === y && t.id !== tok.id);
+    if (ocupado) return;
+
+    const custo = custoMovimentoParaCelula(tok.x, tok.y, x, y);
+    if (custo === Infinity) {
+      dispararToast("Movimento bloqueado por obstáculo.", "erro");
+      return;
+    }
+
+    if (combateIniciado) {
+      if (tok.hpAtual <= 0) {
+        dispararToast("Personagem com 0 PV não pode se mover em combate.", "erro");
+        return;
+      }
+      if ((tok.condicoes || []).includes("atordoado")) {
+        dispararToast("Personagem atordoado não pode se mover.", "erro");
+        return;
+      }
+      if (custo > tok.movimentoRestante) {
+        dispararToast(
+          `Alcance do turno: restam ${tok.movimentoRestante}m (custo ${custo}m).`,
+          "erro"
+        );
+        return;
+      }
+    }
+
+    const novoMovimento = combateIniciado
+      ? Number(Math.max(0, tok.movimentoRestante - custo).toFixed(1))
+      : tok.deslocamentoMax;
+
+    const propDestino = propNaCelula(x, y);
+    let danoAmbiental = 0;
+    if (propDestino?.danoAmbiental) {
+      const r = rolarExpressaoDados(propDestino.danoAmbiental);
+      danoAmbiental = r.total;
+      dispararToast(
+        `🔥 ${tok.nome} sofreu ${danoAmbiental} de dano em ${propDestino.nome}!`,
+        "erro"
+      );
+    }
+
+    const novosTokens = tokens.map((t) => {
+      if (t.id !== tok.id) return t;
+      const novoHp = Math.max(0, t.hpAtual - danoAmbiental);
       return {
         ...t,
         x,
@@ -646,46 +855,21 @@ export function TabuleiroBatalha({
       };
     });
 
-    const coord = `${String.fromCharCode(65 + x)}${y + 1}`;
-    const novoLog = adicionarLog(
-      "movimento",
-      `👣 ${tokenSelecionado.nome} moveu-se para ${coord} (-${custo}m)${textoPerigo}`
-    );
-
     setTokens(novosTokens);
 
     if (conexaoSignalR) {
-      try {
-        await conexaoSignalR.invoke(
-          "MoverToken",
-          tenantId,
-          tokenSelecionado.id,
-          x,
-          y,
-          novoMovimento
-        );
-      } catch {
-        // fallback
-      }
+      await conexaoSignalR
+        .invoke("MoverToken", tenantId, tok.id, x, y, novoMovimento)
+        .catch(() => {});
     }
 
-    await transmitirEstadoGeral({
-      tokens: novosTokens,
-      logsCombate: [novoLog, ...logsCombate.slice(0, 49)],
-    });
+    await transmitirEstadoGeral({ tokens: novosTokens });
   };
 
+  // === AÇÕES AUTOMATIZADAS DA FICHA ===
   const executarAcaoNoAlvo = async (alvoToken) => {
     if (!tokenSelecionado || !acaoSelecionada) return;
-    if (!podeControlarToken(tokenSelecionado)) {
-      return alert("Você não tem permissão para comandar este personagem!");
-    }
-    if (tokenSelecionado.hpAtual <= 0) {
-      return alert("Este personagem está caído (0 PV) e não pode realizar ações!");
-    }
-    if ((tokenSelecionado.condicoes || []).includes("atordoado")) {
-      return alert("Este personagem está Atordoado e não pode realizar ações!");
-    }
+    if (!podeControlarToken(tokenSelecionado)) return;
 
     const distancia = calcularDistanciaMetros(
       tokenSelecionado.x,
@@ -695,30 +879,36 @@ export function TabuleiroBatalha({
     );
 
     if (distancia > acaoSelecionada.alcanceMetros) {
-      return alert(
-        `Alvo fora de alcance! Distância: ${distancia}m | Alcance máximo de "${acaoSelecionada.nome}": ${acaoSelecionada.alcanceMetros}m.`
+      dispararToast(
+        `Fora de alcance (${distancia}m / máx ${acaoSelecionada.alcanceMetros}m).`,
+        "erro"
       );
+      return;
     }
 
     const consomeBonus = acaoSelecionada.custo === "bonus";
     if (combateIniciado) {
       if (consomeBonus && !tokenSelecionado.acaoBonusDisponivel) {
-        return alert("Este personagem já utilizou sua Ação Bônus neste turno!");
+        dispararToast("Ação Bônus já usada neste turno.", "erro");
+        return;
       }
       if (!consomeBonus && !tokenSelecionado.acaoDisponivel) {
-        return alert("Este personagem já utilizou sua Ação Principal neste turno!");
+        dispararToast("Ação Principal já usada neste turno.", "erro");
+        return;
       }
     }
 
     let novosTokens = [...tokens];
-    let logGerado = null;
+    let logGerado;
 
     if (acaoSelecionada.tipo === "cura") {
       const rolagemCura = rolarExpressaoDados(acaoSelecionada.dano, false);
-      const curaTotal = Math.max(1, rolagemCura.total + (acaoSelecionada.bonusDano || 0));
-      const hpAnterior = alvoToken.hpAtual;
-      const novoHp = Math.min(alvoToken.hpMax, hpAnterior + curaTotal);
-      const curadoReal = novoHp - hpAnterior;
+      const curaTotal = Math.max(
+        1,
+        rolagemCura.total + (acaoSelecionada.bonusDano || 0)
+      );
+      const novoHp = Math.min(alvoToken.hpMax, alvoToken.hpAtual + curaTotal);
+      const curadoReal = novoHp - alvoToken.hpAtual;
 
       novosTokens = novosTokens.map((t) => {
         let atualizado = { ...t };
@@ -733,19 +923,17 @@ export function TabuleiroBatalha({
           atualizado = {
             ...atualizado,
             hpAtual: novoHp,
-            morteSucessos: novoHp > 0 ? 0 : t.morteSucessos,
-            morteFalhas: novoHp > 0 ? 0 : t.morteFalhas,
+            morteSucessos: 0,
+            morteFalhas: 0,
             ficha: t.ficha ? { ...t.ficha, pontosDeVidaAtuais: novoHp } : t.ficha,
           };
         }
         return atualizado;
       });
 
-      const detalheBonus =
-        acaoSelecionada.bonusDano > 0 ? ` + ${acaoSelecionada.bonusDano}` : "";
-      logGerado = adicionarLog(
+      logGerado = registrarEvento(
         "cura",
-        `✨ ${tokenSelecionado.nome} usou ${acaoSelecionada.nome} em ${alvoToken.nome}: Restaurou +${curadoReal} PV (Rolagem: ${rolagemCura.formula}[${rolagemCura.dados.join(",")}]${detalheBonus} = ${curaTotal}) → PV: ${novoHp}/${alvoToken.hpMax}`
+        `✨ ${tokenSelecionado.nome} curou ${alvoToken.nome} em +${curadoReal} PV (${acaoSelecionada.nome})`
       );
 
       const alvoAtualizado = novosTokens.find((t) => t.id === alvoToken.id);
@@ -753,16 +941,14 @@ export function TabuleiroBatalha({
     } else {
       const d1 = rolarDado(20);
       const d2 = rolarDado(20);
-
       const condAtacante = tokenSelecionado.condicoes || [];
       const condAlvo = alvoToken.condicoes || [];
 
-      let temVantagem =
+      const temVantagem =
         modoRolagemD20 === "vantagem" ||
         condAlvo.includes("atordoado") ||
         (condAlvo.includes("caido") && acaoSelecionada.alcanceMetros <= 1.5);
-
-      let temDesvantagem =
+      const temDesvantagem =
         modoRolagemD20 === "desvantagem" ||
         alvoToken.esquivando ||
         condAtacante.includes("envenenado");
@@ -771,7 +957,7 @@ export function TabuleiroBatalha({
       if (temVantagem && !temDesvantagem) modoEfetivo = "vantagem";
       else if (temDesvantagem && !temVantagem) modoEfetivo = "desvantagem";
 
-      const d20Escolhido =
+      const d20 =
         modoEfetivo === "vantagem"
           ? Math.max(d1, d2)
           : modoEfetivo === "desvantagem"
@@ -779,23 +965,18 @@ export function TabuleiroBatalha({
             : d1;
 
       const bonusBencao = condAtacante.includes("abencoado") ? rolarDado(4) : 0;
-
-      const isCritico = d20Escolhido === 20;
-      const isFalhaCritica = d20Escolhido === 1;
+      const isCritico = d20 === 20;
+      const isFalha = d20 === 1;
       const bonusAtaque = Number(acaoSelecionada.bonusAtaque || 0);
-      const totalAtaque = d20Escolhido + bonusAtaque + bonusBencao;
-      const acertou = isCritico || (!isFalhaCritica && totalAtaque >= alvoToken.ca);
-
-      const textoDadosD20 =
-        modoEfetivo !== "normal"
-          ? `2d20(${modoEfetivo.toUpperCase()})[${d1}, ${d2} → ${d20Escolhido}]`
-          : `1d20[${d20Escolhido}]`;
-      const strBencao = bonusBencao > 0 ? ` + 1d4(Bênção)[${bonusBencao}]` : "";
+      const totalAtaque = d20 + bonusAtaque + bonusBencao;
+      const acertou = isCritico || (!isFalha && totalAtaque >= alvoToken.ca);
 
       if (acertou) {
         const rolagemDano = rolarExpressaoDados(acaoSelecionada.dano, isCritico);
-        const bonusDano = Number(acaoSelecionada.bonusDano || 0);
-        const danoTotal = Math.max(1, rolagemDano.total + bonusDano);
+        const danoTotal = Math.max(
+          1,
+          rolagemDano.total + Number(acaoSelecionada.bonusDano || 0)
+        );
         const novoHp = Math.max(0, alvoToken.hpAtual - danoTotal);
 
         novosTokens = novosTokens.map((t) => {
@@ -817,62 +998,56 @@ export function TabuleiroBatalha({
           return atualizado;
         });
 
-        const tagCritico = isCritico ? " 🔥 ACERTO CRÍTICO (DADOS DOBRADOS)!" : " ✅ ACERTOU!";
-        const tagCaido = novoHp === 0 ? ` 💀 ${alvoToken.nome} CAIU A 0 PV!` : "";
-        const strBonusAtaque = bonusAtaque >= 0 ? `+ ${bonusAtaque}` : `- ${Math.abs(bonusAtaque)}`;
-        const strBonusDano =
-          bonusDano > 0 ? ` + ${bonusDano}` : bonusDano < 0 ? ` - ${Math.abs(bonusDano)}` : "";
-
-        logGerado = adicionarLog(
+        logGerado = registrarEvento(
           "ataque",
-          `⚔️ ${tokenSelecionado.nome} usou "${acaoSelecionada.nome}" em ${alvoToken.nome}: ${textoDadosD20} ${strBonusAtaque}${strBencao} = ${totalAtaque} vs CA ${alvoToken.ca}${tagCritico} Causou ${danoTotal} de dano (${rolagemDano.formula}[${rolagemDano.dados.join(",")}]${strBonusDano}). PV de ${alvoToken.nome}: ${novoHp}/${alvoToken.hpMax}${tagCaido}`
+          `⚔️ ${tokenSelecionado.nome} → ${alvoToken.nome}: Acerto ${totalAtaque} vs CA ${alvoToken.ca}${
+            isCritico ? " (CRÍTICO!)" : ""
+          } • ${danoTotal} de dano (${acaoSelecionada.nome})`
         );
 
         const alvoAtualizado = novosTokens.find((t) => t.id === alvoToken.id);
         void sincronizarHpNoBanco(alvoAtualizado);
       } else {
-        novosTokens = novosTokens.map((t) => {
-          if (t.id === tokenSelecionado.id && combateIniciado) {
-            return {
-              ...t,
-              acaoDisponivel: consomeBonus ? t.acaoDisponivel : false,
-              acaoBonusDisponivel: consomeBonus ? false : t.acaoBonusDisponivel,
-            };
-          }
-          return t;
-        });
+        novosTokens = novosTokens.map((t) =>
+          t.id === tokenSelecionado.id && combateIniciado
+            ? {
+                ...t,
+                acaoDisponivel: consomeBonus ? t.acaoDisponivel : false,
+                acaoBonusDisponivel: consomeBonus ? false : t.acaoBonusDisponivel,
+              }
+            : t
+        );
 
-        const tagErro = isFalhaCritica ? " ❌ FALHA CRÍTICA (1 NATURAL)!" : " 🛡️ ERROU!";
-        const strBonusAtaque = bonusAtaque >= 0 ? `+ ${bonusAtaque}` : `- ${Math.abs(bonusAtaque)}`;
-
-        logGerado = adicionarLog(
+        logGerado = registrarEvento(
           "erro",
-          `🛡️ ${tokenSelecionado.nome} atacou ${alvoToken.nome} com "${acaoSelecionada.nome}": ${textoDadosD20} ${strBonusAtaque}${strBencao} = ${totalAtaque} vs CA ${alvoToken.ca}${tagErro}`
+          `🛡️ ${tokenSelecionado.nome} errou ${alvoToken.nome} (${totalAtaque} vs CA ${alvoToken.ca})`
         );
       }
     }
 
     setTokens(novosTokens);
-    setModoInteracao("mover");
+    setFerramenta("mover");
     setAcaoSelecionada(null);
+    setSubMenuToken(null);
 
     if (conexaoSignalR) {
-      try {
-        await conexaoSignalR.invoke("ExecutarAcaoCombate", tenantId, {
+      await conexaoSignalR
+        .invoke("ExecutarAcaoCombate", tenantId, {
           tokens: novosTokens,
           log: logGerado,
-        });
-      } catch {
-        // fallback
-      }
+        })
+        .catch(() => {});
     }
 
     await transmitirEstadoGeral({
       tokens: novosTokens,
-      logsCombate: logGerado ? [logGerado, ...logsCombate.slice(0, 49)] : logsCombate,
+      logsCombate: logGerado
+        ? [logGerado, ...logsCombate.slice(0, 48)]
+        : logsCombate,
     });
   };
 
+  // === STATUS, VISIBILIDADE E REMOÇÃO ===
   const alternarCondicaoToken = async (condId) => {
     if (!tokenSelecionado) return;
     const atuais = tokenSelecionado.condicoes || [];
@@ -883,20 +1058,8 @@ export function TabuleiroBatalha({
     const novosTokens = tokens.map((t) =>
       t.id === tokenSelecionado.id ? { ...t, condicoes: novas } : t
     );
-
-    const objCond = CONDICOES_DND.find((c) => c.id === condId);
-    const log = adicionarLog(
-      "sistema",
-      `${objCond?.icone || "✨"} ${tokenSelecionado.nome} ${
-        novas.includes(condId) ? "recebeu" : "removeu"
-      } a condição: ${objCond?.nome || condId}`
-    );
-
     setTokens(novosTokens);
-    await transmitirEstadoGeral({
-      tokens: novosTokens,
-      logsCombate: [log, ...logsCombate.slice(0, 49)],
-    });
+    await transmitirEstadoGeral({ tokens: novosTokens });
   };
 
   const alternarVisibilidadeToken = async () => {
@@ -905,193 +1068,31 @@ export function TabuleiroBatalha({
     const novosTokens = tokens.map((t) =>
       t.id === tokenSelecionado.id ? { ...t, oculto: novoOculto } : t
     );
-
-    const log = !novoOculto
-      ? adicionarLog(
-          "spawn",
-          `👁️ EMBOSCADA! ${tokenSelecionado.nome} revelou-se das sombras!`
-        )
-      : logsCombate[0];
-
     setTokens(novosTokens);
-    await transmitirEstadoGeral({
-      tokens: novosTokens,
-      logsCombate: !novoOculto ? [log, ...logsCombate.slice(0, 49)] : logsCombate,
-    });
+    dispararToast(
+      novoOculto
+        ? `${tokenSelecionado.nome} ocultado dos jogadores`
+        : `${tokenSelecionado.nome} revelado no mapa`
+    );
+    await transmitirEstadoGeral({ tokens: novosTokens });
   };
 
-  const realizarDescansoCurto = async () => {
-    if (!isMestre) return;
-    const novosTokens = tokens.map((t) => {
-      if (t.faccao !== "heroi") return t;
-      const modCon = calcularModificador(t.ficha?.constituicao ?? 12);
-      const cura = Math.max(1, rolarDado(8) + modCon);
-      const novoHp = Math.min(t.hpMax, t.hpAtual + cura);
-      const atualizado = {
-        ...t,
-        hpAtual: novoHp,
-        ficha: t.ficha ? { ...t.ficha, pontosDeVidaAtuais: novoHp } : t.ficha,
-      };
-      void sincronizarHpNoBanco(atualizado);
-      return atualizado;
-    });
-
-    const log = adicionarLog(
-      "cura",
-      "⛺ O grupo realizou um Descanso Curto (Dados de Vida gastos para recuperar PV)!"
-    );
-    setTokens(novosTokens);
-    await transmitirEstadoGeral({
-      tokens: novosTokens,
-      logsCombate: [log, ...logsCombate.slice(0, 49)],
-    });
+  const removerToken = async (tokenId) => {
+    const filtrados = tokens.filter((t) => t.id !== tokenId);
+    setTokens(filtrados);
+    if (tokenSelecionadoId === tokenId) {
+      setTokenSelecionadoId(null);
+      setSubMenuToken(null);
+    }
+    await transmitirEstadoGeral({ tokens: filtrados });
   };
 
-  const realizarDescansoLongo = async () => {
-    if (!isMestre) return;
-    try {
-      await api.post(`/characters/mesa/${tenantId}/descanso-longo`);
-    } catch {
-      // continua localmente
-    }
-
-    const novosTokens = tokens.map((t) => {
-      if (t.faccao !== "heroi") return t;
-      const atualizado = {
-        ...t,
-        hpAtual: t.hpMax,
-        hpTemp: 0,
-        condicoes: [],
-        esquivando: false,
-        morteSucessos: 0,
-        morteFalhas: 0,
-        movimentoRestante: t.deslocamentoMax,
-        acaoDisponivel: true,
-        acaoBonusDisponivel: true,
-        ficha: t.ficha ? { ...t.ficha, pontosDeVidaAtuais: t.hpMax } : t.ficha,
-      };
-      void sincronizarHpNoBanco(atualizado);
-      return atualizado;
-    });
-
-    const log = adicionarLog(
-      "cura",
-      "🌙 O grupo realizou um Descanso Longo! Todos os heróis recuperaram 100% dos PV e removeram condições negativas."
-    );
-    setTokens(novosTokens);
-    await transmitirEstadoGeral({
-      tokens: novosTokens,
-      logsCombate: [log, ...logsCombate.slice(0, 49)],
-    });
-  };
-
-  const usarDisparada = async () => {
-    if (!tokenSelecionado) return;
-    if (!podeControlarToken(tokenSelecionado)) {
-      return alert("Você só pode comandar seu próprio personagem!");
-    }
-    if (combateIniciado && !tokenSelecionado.acaoDisponivel) {
-      return alert("Você já usou sua Ação Principal neste turno!");
-    }
-
-    const ganho = tokenSelecionado.deslocamentoMax;
-    const novosTokens = tokens.map((t) =>
-      t.id === tokenSelecionado.id
-        ? {
-            ...t,
-            movimentoRestante: Number((t.movimentoRestante + ganho).toFixed(1)),
-            acaoDisponivel: false,
-          }
-        : t
-    );
-
-    const log = adicionarLog(
-      "sistema",
-      `🏃 ${tokenSelecionado.nome} usou Disparada (Dash) e ganhou +${ganho}m de deslocamento neste turno!`
-    );
-    setTokens(novosTokens);
-    await transmitirEstadoGeral({
-      tokens: novosTokens,
-      logsCombate: [log, ...logsCombate.slice(0, 49)],
-    });
-  };
-
-  const usarEsquivar = async () => {
-    if (!tokenSelecionado) return;
-    if (!podeControlarToken(tokenSelecionado)) {
-      return alert("Você só pode comandar seu próprio personagem!");
-    }
-    if (combateIniciado && !tokenSelecionado.acaoDisponivel) {
-      return alert("Você já usou sua Ação Principal neste turno!");
-    }
-
-    const novosTokens = tokens.map((t) =>
-      t.id === tokenSelecionado.id
-        ? { ...t, esquivando: true, acaoDisponivel: false }
-        : t
-    );
-
-    const log = adicionarLog(
-      "sistema",
-      `🛡️ ${tokenSelecionado.nome} assumiu postura de Esquiva (Dodge)! Ataques contra ele têm Desvantagem até seu próximo turno.`
-    );
-    setTokens(novosTokens);
-    await transmitirEstadoGeral({
-      tokens: novosTokens,
-      logsCombate: [log, ...logsCombate.slice(0, 49)],
-    });
-  };
-
-  const rolarSalvaguardaMorte = async () => {
-    if (!tokenSelecionado || tokenSelecionado.hpAtual > 0) return;
-
-    const d20 = rolarDado(20);
-    let sucessos = tokenSelecionado.morteSucessos || 0;
-    let falhas = tokenSelecionado.morteFalhas || 0;
-    let novoHp = 0;
-    let msg = "";
-
-    if (d20 === 20) {
-      novoHp = 1;
-      sucessos = 0;
-      falhas = 0;
-      msg = `🌟 MILAGRE (20 Natural)! ${tokenSelecionado.nome} recupera a consciência com 1 PV!`;
-    } else if (d20 === 1) {
-      falhas = Math.min(3, falhas + 2);
-      msg = `💀 Salvaguarda contra a Morte de ${tokenSelecionado.nome}: Rolou [1] → +2 Falhas (${sucessos}/3 Sucessos, ${falhas}/3 Falhas)!`;
-    } else if (d20 >= 10) {
-      sucessos = Math.min(3, sucessos + 1);
-      msg = `🎲 Salvaguarda contra a Morte de ${tokenSelecionado.nome}: Rolou [${d20}] → Sucesso! (${sucessos}/3 Sucessos, ${falhas}/3 Falhas)${sucessos === 3 ? " ✨ ESTABILIZADO!" : ""}`;
-    } else {
-      falhas = Math.min(3, falhas + 1);
-      msg = `🎲 Salvaguarda contra a Morte de ${tokenSelecionado.nome}: Rolou [${d20}] → Falha! (${sucessos}/3 Sucessos, ${falhas}/3 Falhas)${falhas === 3 ? " ⚰️ PERSONAGEM MORREU!" : ""}`;
-    }
-
-    const novosTokens = tokens.map((t) =>
-      t.id === tokenSelecionado.id
-        ? {
-            ...t,
-            hpAtual: novoHp,
-            morteSucessos: sucessos,
-            morteFalhas: falhas,
-            acaoDisponivel: false,
-          }
-        : t
-    );
-
-    const log = adicionarLog("ataque", msg);
-    setTokens(novosTokens);
-    const atualizado = novosTokens.find((t) => t.id === tokenSelecionado.id);
-    void sincronizarHpNoBanco(atualizado);
-    await transmitirEstadoGeral({
-      tokens: novosTokens,
-      logsCombate: [log, ...logsCombate.slice(0, 49)],
-    });
-  };
-
-  const iniciarOuReiniciarCombate = async () => {
+  // === CONTROLE DE TURNOS OPCIONAL ===
+  const iniciarTurnos = async () => {
     if (tokens.length === 0) {
-      return alert("Spawne pelo menos um personagem no tabuleiro antes de iniciar o combate!");
+      setPainelAberto("dock");
+      dispararToast("Adicione personagens ao mapa primeiro.");
+      return;
     }
 
     const ordenados = [...tokens]
@@ -1118,10 +1119,11 @@ export function TabuleiroBatalha({
     setRodada(1);
     setCombateIniciado(true);
     setTokenSelecionadoId(ordenados[0].id);
+    setPainelAberto(null);
 
-    const log = adicionarLog(
+    const log = registrarEvento(
       "sistema",
-      `⚔️ COMBATE INICIADO! Rodada 1 — Vez de ${ordenados[0].nome} (Iniciativa ${ordenados[0].iniciativa}).`
+      `⚔️ Ordem de turnos iniciada! Vez de ${ordenados[0].nome}`
     );
 
     await transmitirEstadoGeral({
@@ -1129,16 +1131,15 @@ export function TabuleiroBatalha({
       turnoIndex: 0,
       rodada: 1,
       combateIniciado: true,
-      logsCombate: [log, ...logsCombate.slice(0, 49)],
+      logsCombate: [log, ...logsCombate.slice(0, 48)],
     });
   };
 
-  const avancarProximoTurno = async () => {
+  const proximoTurno = async () => {
     if (tokens.length === 0) return;
-
     const proximoIdx = (turnoIndex + 1) % tokens.length;
     const novaRodada = proximoIdx === 0 ? rodada + 1 : rodada;
-    const tokenQueVaiAgir = tokens[proximoIdx];
+    const tokenAtivo = tokens[proximoIdx];
 
     const novosTokens = tokens.map((t, idx) =>
       idx === proximoIdx
@@ -1155,46 +1156,164 @@ export function TabuleiroBatalha({
     setTokens(novosTokens);
     setTurnoIndex(proximoIdx);
     setRodada(novaRodada);
-    setTokenSelecionadoId(tokenQueVaiAgir.id);
-    setModoInteracao("mover");
+    setTokenSelecionadoId(tokenAtivo.id);
+    setFerramenta("mover");
     setAcaoSelecionada(null);
 
-    const log = adicionarLog(
-      "sistema",
-      `⏭️ Rodada ${novaRodada} • Turno de ${tokenQueVaiAgir.nome} (${tokenQueVaiAgir.deslocamentoMax}m de movimento restaurados).`
-    );
+    dispararToast(`Rodada ${novaRodada} • Vez de ${tokenAtivo.nome}`);
 
     await transmitirEstadoGeral({
       tokens: novosTokens,
       turnoIndex: proximoIdx,
       rodada: novaRodada,
-      logsCombate: [log, ...logsCombate.slice(0, 49)],
     });
   };
 
-  const removerToken = async (tokenId) => {
-    const alvo = tokens.find((t) => t.id === tokenId);
-    const filtrados = tokens.filter((t) => t.id !== tokenId);
-    setTokens(filtrados);
-    if (tokenSelecionadoId === tokenId) {
-      setTokenSelecionadoId(filtrados[0]?.id || null);
+  const encerrarTurnos = async () => {
+    setCombateIniciado(false);
+    setPainelAberto(null);
+    dispararToast("Movimentação livre ativada.");
+    await transmitirEstadoGeral({ combateIniciado: false });
+  };
+
+  const realizarDescansoLongo = async () => {
+    if (!isMestre) return;
+    await api.post(`/characters/mesa/${tenantId}/descanso-longo`).catch(() => {});
+    const novosTokens = tokens.map((t) => {
+      if (t.faccao !== "heroi") return t;
+      const curado = {
+        ...t,
+        hpAtual: t.hpMax,
+        condicoes: [],
+        morteSucessos: 0,
+        morteFalhas: 0,
+        movimentoRestante: t.deslocamentoMax,
+        acaoDisponivel: true,
+        acaoBonusDisponivel: true,
+      };
+      void sincronizarHpNoBanco(curado);
+      return curado;
+    });
+    setTokens(novosTokens);
+    setPainelAberto(null);
+    dispararToast("Descanso Longo: PV dos heróis restaurados!", "sucesso");
+    await transmitirEstadoGeral({ tokens: novosTokens });
+  };
+
+  // === ROLADOR DE DADOS FLUTUANTE ===
+  const fichaSelecionadaDados = fichasMesa.find(
+    (f) => String(f.id) === String(fichaRolagemId)
+  );
+
+  const publicarRolagemLocal = async (pacote) => {
+    setRolagensSala((prev) => [
+      pacote,
+      ...prev.filter((r) => r.id !== pacote.id).slice(0, 29),
+    ]);
+    const texto = `🎲 ${pacote.autor}: ${pacote.titulo} → ${pacote.total} ${pacote.detalhe || ""}`;
+    dispararToast(
+      texto,
+      pacote.critico ? "sucesso" : pacote.falha ? "erro" : "dado"
+    );
+    if (conexaoSignalR) {
+      await conexaoSignalR
+        .invoke("EnviarRolagemStorytelling", tenantId, pacote)
+        .catch(() => {});
     }
-    const log = adicionarLog("sistema", `💨 ${alvo?.nome || "Token"} foi removido do tabuleiro.`);
-    await transmitirEstadoGeral({
-      tokens: filtrados,
-      logsCombate: [log, ...logsCombate.slice(0, 49)],
-    });
   };
 
+  const rolarDadoBandeja = async (faces) => {
+    const autor =
+      fichaSelecionadaDados?.nome ||
+      (isMestre ? "Mestre" : usuarioLogado?.nome || "Jogador");
+
+    if (faces === 20 && modoRolagemD20 !== "normal") {
+      const d1 = rolarDado(20);
+      const d2 = rolarDado(20);
+      const escolhido =
+        modoRolagemD20 === "vantagem" ? Math.max(d1, d2) : Math.min(d1, d2);
+      const pacote = {
+        id: gerarIdUnico("dado"),
+        autor,
+        titulo: `d20 (${modoRolagemD20})`,
+        detalhe: `[${d1}, ${d2}]`,
+        total: escolhido,
+        critico: escolhido === 20,
+        falha: escolhido === 1,
+        horario: horarioCurto(),
+      };
+      await publicarRolagemLocal(pacote);
+      return;
+    }
+
+    const valor = rolarDado(faces);
+    const pacote = {
+      id: gerarIdUnico("dado"),
+      autor,
+      titulo: `d${faces}`,
+      detalhe: "",
+      total: valor,
+      critico: faces === 20 && valor === 20,
+      falha: faces === 20 && valor === 1,
+      horario: horarioCurto(),
+    };
+    await publicarRolagemLocal(pacote);
+  };
+
+  const rolarPericiaRapida = async (pericia) => {
+    const autor =
+      fichaSelecionadaDados?.nome ||
+      (isMestre ? "Mestre" : usuarioLogado?.nome || "Jogador");
+    const valExplicito = Number(fichaSelecionadaDados?.[pericia.key] ?? 0);
+    const modAttr = calcularModificador(fichaSelecionadaDados?.[pericia.attr] ?? 10);
+    const bonus = valExplicito !== 0 ? valExplicito : modAttr;
+
+    const d1 = rolarDado(20);
+    const d2 = rolarDado(20);
+    const d20 =
+      modoRolagemD20 === "vantagem"
+        ? Math.max(d1, d2)
+        : modoRolagemD20 === "desvantagem"
+          ? Math.min(d1, d2)
+          : d1;
+
+    const total = d20 + bonus;
+    const sinal = bonus >= 0 ? `+${bonus}` : `${bonus}`;
+    const pacote = {
+      id: gerarIdUnico("dado"),
+      autor,
+      titulo: pericia.label,
+      detalhe: `(${d20}${sinal})`,
+      total,
+      critico: d20 === 20,
+      falha: d20 === 1,
+      horario: horarioCurto(),
+    };
+    await publicarRolagemLocal(pacote);
+  };
+
+  // === CLIQUE E INTERAÇÃO NAS CÉLULAS DO MAPA ===
   const handleCellClick = async (x, y) => {
-    if (isMestre && abaLateral === "cenario" && modoInteracao === "prop") {
+    // 1. Ferramenta Régua (Medir distância)
+    if (ferramenta === "medir") {
+      if (!reguaInicio || (reguaInicio && reguaFim.fixado)) {
+        setReguaInicio({ x, y });
+        setReguaFim({ x, y, fixado: false });
+      } else {
+        setReguaFim({ x, y, fixado: true });
+      }
+      return;
+    }
+
+    // 2. Ferramenta Objetos / Props (Mestre)
+    if (isMestre && ferramenta === "objetos") {
       let novosProps = [...(cenarioAtual.props || [])];
       if (modoBorrachaProp) {
         novosProps = novosProps.filter((p) => !(p.x === x && p.y === y));
       } else if (propSelecionado) {
         novosProps = novosProps.filter((p) => !(p.x === x && p.y === y));
         novosProps.push({
-          id: `prop-${Date.now()}-${x}-${y}`,
+          id: `${gerarIdUnico("prop")}-${x}-${y}`,
           x,
           y,
           tipo: propSelecionado.tipo,
@@ -1205,65 +1324,117 @@ export function TabuleiroBatalha({
           danoAmbiental: propSelecionado.danoAmbiental,
         });
       }
-
       const novoCenario = { ...cenarioAtual, props: novosProps };
       setCenarioAtual(novoCenario);
       if (conexaoSignalR) {
-        try {
-          await conexaoSignalR.invoke("AtualizarCenarioBatalha", tenantId, novoCenario);
-        } catch {
-          // fallback
-        }
+        await conexaoSignalR
+          .invoke("AtualizarCenarioBatalha", tenantId, novoCenario)
+          .catch(() => {});
       }
       await transmitirEstadoGeral({ cenarioAtual: novoCenario });
       return;
     }
 
-    if (isMestre && modoInteracao === "spawn") {
-      await spawnarPersonagemNaCelula(x, y);
+    // 3. Posicionamento de ficha escolhida na bandeja inferior
+    if (ferramenta === "posicionar" && fichaParaPosicionar) {
+      await posicionarFichaNaCelula(fichaParaPosicionar, x, y);
       return;
     }
 
     const tokenNoLocal = tokenNaCelula(x, y);
 
-    if (modoInteracao === "acao" && acaoSelecionada) {
+    // 4. Escolha de alvo para ação selecionada
+    if (ferramenta === "alvo" && acaoSelecionada) {
       if (tokenNoLocal) {
         await executarAcaoNoAlvo(tokenNoLocal);
       } else {
-        setModoInteracao("mover");
+        setFerramenta("mover");
         setAcaoSelecionada(null);
       }
       return;
     }
 
+    // 5. Seleção ou Movimentação padrão
     if (tokenNoLocal) {
-      setTokenSelecionadoId(tokenNoLocal.id);
-      setModoInteracao("mover");
-      setAcaoSelecionada(null);
+      if (tokenSelecionadoId === tokenNoLocal.id) {
+        setTokenSelecionadoId(null);
+        setSubMenuToken(null);
+      } else {
+        setTokenSelecionadoId(tokenNoLocal.id);
+        setSubMenuToken(null);
+      }
       return;
     }
 
-    if (tokenSelecionado && modoInteracao === "mover") {
-      await moverTokenParaCelula(x, y);
+    if (tokenSelecionado && ferramenta === "mover") {
+      await moverTokenParaCelula(tokenSelecionado, x, y);
     }
   };
 
-  const selecionarAbaMobile = (novaAba) => {
-    if (novaAba === "mapa") {
-      setGavetaMobileAberta(false);
-      return;
+  const handleDropNaCelula = async (e, x, y) => {
+    e.preventDefault();
+    if (!arrastandoItem) return;
+    if (arrastandoItem.tipo === "token") {
+      const tok = tokens.find((t) => t.id === arrastandoItem.id);
+      if (tok) {
+        setTokenSelecionadoId(tok.id);
+        await moverTokenParaCelula(tok, x, y);
+      }
+    } else if (arrastandoItem.tipo === "ficha") {
+      await posicionarFichaNaCelula(arrastandoItem.ficha, x, y);
     }
-    setAbaLateral(novaAba);
-    setGavetaMobileAberta(true);
-    if (novaAba === "spawn" && isMestre) setModoInteracao("spawn");
-    else if (novaAba === "cenario" && isMestre) setModoInteracao("prop");
-    else if (novaAba === "combate") setModoInteracao("mover");
+    setArrastandoItem(null);
   };
+
+  const handleWheelCanvas = (e) => {
+    if (e.ctrlKey || e.metaKey) {
+      e.preventDefault();
+      const delta = e.deltaY < 0 ? 6 : -6;
+      setTamanhoCelula((prev) => Math.max(28, Math.min(84, prev + delta)));
+    }
+  };
+
+  const copiarCodigoSala = async () => {
+    const codigo = mesaInfo?.codigoConvite || tenantId;
+    if (!codigo) return;
+    try {
+      await navigator.clipboard.writeText(codigo);
+      setCodigoCopiado(true);
+      setTimeout(() => setCodigoCopiado(false), 1800);
+      dispararToast(`Código #${codigo} copiado!`);
+    } catch {
+      // ignora
+    }
+  };
+
+  const fichasPendentesCount = isMestre
+    ? fichasMesa.filter((f) => f.status === 0).length
+    : 0;
+  const notificacoesGrupo = solicitacoes.length + fichasPendentesCount;
 
   const temaVisual = TEMAS_TABULEIRO[cenarioAtual.tema] || TEMAS_TABULEIRO.masmorra;
+  const zoomPercent = Math.round((tamanhoCelula / CELL_BASE) * 100);
+
+  // Histórico unificado (rolagens de dados + eventos do mapa)
+  const historicoRecente = useMemo(() => {
+    const itensDados = rolagensSala.map((r) => ({
+      id: r.id,
+      horario: r.horario,
+      texto: `🎲 ${r.autor}: ${r.titulo} = ${r.total} ${r.detalhe || ""}`,
+    }));
+    const itensCombate = logsCombate.map((l) => ({
+      id: l.id,
+      horario: l.horario,
+      texto: l.texto,
+    }));
+    return [...itensDados, ...itensCombate].slice(0, 25);
+  }, [rolagensSala, logsCombate]);
 
   return (
-    <div className="w-screen h-[100dvh] bg-zinc-950 text-zinc-100 flex flex-col overflow-hidden select-none z-40">
+    <div
+      onWheel={handleWheelCanvas}
+      className="w-screen h-[100dvh] owlbear-canvas-bg text-zinc-100 relative overflow-hidden select-none flex flex-col"
+    >
       <FichaModal
         isOpen={fichaModalAberta}
         onClose={() => setFichaModalAberta(false)}
@@ -1271,1077 +1442,1405 @@ export function TabuleiroBatalha({
         fichaObjeto={fichaModalDados.objeto}
       />
 
-      {/* BARRA SUPERIOR RESPONSIVA (DESKTOP & MOBILE) */}
-      <header className="bg-zinc-900/95 border-b border-zinc-800 px-2.5 sm:px-4 py-2 flex flex-col gap-2 shrink-0 shadow-lg">
-        <div className="flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2 min-w-0">
-            <button
-              onClick={onVoltarStorytelling}
-              className="bg-zinc-800 hover:bg-zinc-700 text-zinc-200 px-2.5 py-1.5 rounded-lg text-xs font-bold border border-zinc-700 transition-colors shrink-0"
+      {/* =================================================================== */}
+      {/* 1. CANVAS EM TELA CHEIA (ESTILO OWLBEAR RODEO)                      */}
+      {/* =================================================================== */}
+      <div
+        onClick={() => {
+          if (painelAberto && painelAberto !== "dock") setPainelAberto(null);
+        }}
+        className="flex-1 w-full h-full overflow-auto custom-scrollbar flex items-center justify-center p-10 sm:p-20"
+      >
+        <div
+          className={`relative rounded-2xl shadow-[0_20px_70px_rgba(0,0,0,0.75)] border border-white/10 overflow-hidden shrink-0 transition-all ${
+            cenarioAtual.fundoUrl ? "bg-zinc-950" : temaVisual.bgGrid
+          }`}
+          style={{
+            backgroundImage: cenarioAtual.fundoUrl
+              ? `url(${cenarioAtual.fundoUrl})`
+              : "none",
+            backgroundSize: "cover",
+            backgroundPosition: "center",
+          }}
+        >
+          {/* Camada SVG da Régua (Medidor de Distância Owlbear) */}
+          {ferramenta === "medir" && reguaInicio && reguaFim && (
+            <svg
+              className="absolute inset-0 z-30 pointer-events-none"
+              width={cenarioAtual.largura * tamanhoCelula}
+              height={cenarioAtual.altura * tamanhoCelula}
             >
-              📖 <span className="hidden sm:inline">Modo Storytelling</span>
-              <span className="sm:hidden">Narrativa</span>
-            </button>
-
-            <div className="border-l border-zinc-800 pl-2 min-w-0">
-              <span className="text-red-500 font-extrabold uppercase tracking-wider text-xs sm:text-sm truncate block">
-                ⚔️ {cenarioAtual.nome}
-              </span>
-            </div>
-          </div>
-
-          {/* Controles de Zoom do Grid + Turno/Iniciativa */}
-          <div className="flex items-center gap-1.5 shrink-0">
-            {/* Controle de Zoom amigável para Mobile */}
-            <div className="flex items-center bg-zinc-950 border border-zinc-800 rounded-lg p-0.5">
-              <button
-                onClick={() => setTamanhoCelula((prev) => Math.max(28, prev - 6))}
-                className="px-2 py-1 text-xs font-bold text-zinc-400 hover:text-white"
-                title="Diminuir Zoom do Tabuleiro"
-              >
-                −
-              </button>
-              <span className="text-[10px] font-mono text-zinc-500 px-1 hidden sm:inline">
-                Zoom
-              </span>
-              <button
-                onClick={() => setTamanhoCelula((prev) => Math.min(72, prev + 6))}
-                className="px-2 py-1 text-xs font-bold text-zinc-400 hover:text-white"
-                title="Aumentar Zoom do Tabuleiro"
-              >
-                +
-              </button>
-            </div>
-
-            {isMestre && (
-              <div className="hidden md:flex items-center gap-1.5">
-                <button
-                  onClick={realizarDescansoCurto}
-                  title="Recuperar PV com Dados de Vida"
-                  className="bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-zinc-200 px-2.5 py-1.5 rounded-lg text-xs font-bold"
-                >
-                  ⛺ Curto
-                </button>
-                <button
-                  onClick={realizarDescansoLongo}
-                  title="Restaurar 100% dos PV e limpar condições"
-                  className="bg-indigo-950 hover:bg-indigo-900 border border-indigo-700 text-indigo-200 px-2.5 py-1.5 rounded-lg text-xs font-bold"
-                >
-                  🌙 Longo
-                </button>
-              </div>
-            )}
-
-            {combateIniciado && (
-              <div className="bg-red-950/60 border border-red-800/70 px-2 py-1 rounded-lg text-[11px] font-bold text-red-300">
-                R{rodada}
-              </div>
-            )}
-
-            {isMestre && (
-              <button
-                onClick={iniciarOuReiniciarCombate}
-                className="bg-amber-700 hover:bg-amber-600 text-white px-2.5 py-1.5 rounded-lg text-xs font-bold transition-colors shadow"
-              >
-                🎲 <span className="hidden sm:inline">{combateIniciado ? "Rerrolar" : "Iniciativa"}</span>
-              </button>
-            )}
-
-            {combateIniciado && (
-              <button
-                onClick={avancarProximoTurno}
-                className="bg-emerald-600 hover:bg-emerald-500 text-white px-2.5 py-1.5 rounded-lg text-xs font-bold transition-colors shadow"
-              >
-                Turno ⏭️
-              </button>
-            )}
-          </div>
-        </div>
-
-        {/* BARRA HORIZONTAL DESLIZÁVEL DE INICIATIVA (OTIMIZADA PARA TOQUE) */}
-        <div className="flex items-center gap-1.5 overflow-x-auto custom-scrollbar pb-0.5">
-          {tokensVisiveis.length === 0 ? (
-            <span className="text-[11px] text-zinc-500 italic">
-              Nenhum combatente no grid — use a aba &quot;Fichas/Spawn&quot; para posicionar heróis e monstros!
-            </span>
-          ) : (
-            tokensVisiveis.map((t) => {
-              const isVez = combateIniciado && tokenDoTurno?.id === t.id;
-              const isSel = t.id === tokenSelecionadoId;
-              return (
-                <button
-                  key={t.id}
-                  onClick={() => {
-                    setTokenSelecionadoId(t.id);
-                    setModoInteracao("mover");
-                    setAcaoSelecionada(null);
-                  }}
-                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs transition-all shrink-0 ${
-                    isVez
-                      ? "bg-amber-950/90 border-amber-400 text-amber-200 ring-2 ring-amber-500/40 font-bold"
-                      : isSel
-                        ? "bg-zinc-800 border-zinc-400 text-white"
-                        : "bg-zinc-950/80 border-zinc-800 text-zinc-400"
-                  } ${t.hpAtual <= 0 ? "opacity-50 line-through" : ""} ${
-                    t.oculto ? "border-dashed border-purple-500 opacity-75" : ""
-                  }`}
-                >
-                  <span>{t.icone}</span>
-                  <span className="max-w-[80px] truncate">{t.nome}</span>
-                  {t.oculto && <span>👻</span>}
-                  <span className="text-[10px] font-mono bg-black/50 px-1 rounded text-amber-400">
-                    🎲{t.iniciativa}
-                  </span>
-                  <span
-                    className={`text-[10px] font-mono ${
-                      t.hpAtual <= t.hpMax * 0.3 ? "text-red-400" : "text-emerald-400"
-                    }`}
-                  >
-                    {t.hpAtual}PV
-                  </span>
-                </button>
-              );
-            })
+              <line
+                x1={reguaInicio.x * tamanhoCelula + tamanhoCelula / 2}
+                y1={reguaInicio.y * tamanhoCelula + tamanhoCelula / 2}
+                x2={reguaFim.x * tamanhoCelula + tamanhoCelula / 2}
+                y2={reguaFim.y * tamanhoCelula + tamanhoCelula / 2}
+                stroke="#818cf8"
+                strokeWidth="3"
+                strokeDasharray="6 6"
+              />
+              <circle
+                cx={reguaInicio.x * tamanhoCelula + tamanhoCelula / 2}
+                cy={reguaInicio.y * tamanhoCelula + tamanhoCelula / 2}
+                r="5"
+                fill="#818cf8"
+              />
+              <circle
+                cx={reguaFim.x * tamanhoCelula + tamanhoCelula / 2}
+                cy={reguaFim.y * tamanhoCelula + tamanhoCelula / 2}
+                r="6"
+                fill="#ffffff"
+                stroke="#6366f1"
+                strokeWidth="2.5"
+              />
+            </svg>
           )}
-        </div>
-      </header>
 
-      {/* CORPO PRINCIPAL: TABULEIRO + LATERAL (DESKTOP) OU GAVETA DESLIZANTE (MOBILE) */}
-      <div className="flex-1 flex flex-col lg:flex-row overflow-hidden relative">
-        {/* ÁREA DO GRID QUADRICULADO COM PAN/SCROLL SUAVE */}
-        <div className="flex-1 relative bg-zinc-950 flex flex-col overflow-hidden">
-          {/* BANNER DE INSTRUÇÃO DO MODO ATIVO */}
-          <div className="mx-2 mt-2 flex items-center justify-between gap-2 bg-zinc-900/90 border border-zinc-800 px-3 py-1.5 rounded-xl text-[11px] sm:text-xs shadow-md shrink-0">
-            {modoInteracao === "spawn" && (
-              <span className="text-emerald-400 font-bold truncate">
-                📍 Toque em qualquer quadrado livre do grid para spawnar o personagem!
-              </span>
-            )}
-            {modoInteracao === "prop" && abaLateral === "cenario" && (
-              <span className="text-amber-400 font-bold truncate">
-                🗺️ Toque nos quadrados para{" "}
-                {modoBorrachaProp
-                  ? "remover props (Borracha)"
-                  : `posicionar ${propSelecionado?.icone} ${propSelecionado?.nome}`}
-              </span>
-            )}
-            {modoInteracao === "acao" && acaoSelecionada && (
-              <div className="flex items-center justify-between w-full gap-2">
-                <span className="text-red-400 font-bold truncate">
-                  🎯 Alvo de {acaoSelecionada.icone} {acaoSelecionada.nome} ({acaoSelecionada.alcanceMetros}m): Toque no alvo!
-                </span>
-                <button
-                  onClick={() => {
-                    setModoInteracao("mover");
-                    setAcaoSelecionada(null);
-                  }}
-                  className="bg-zinc-800 hover:bg-zinc-700 text-zinc-200 px-2.5 py-0.5 rounded text-[11px] shrink-0"
-                >
-                  Cancelar
-                </button>
-              </div>
-            )}
-            {modoInteracao === "mover" && (
-              <span className="text-zinc-300 truncate">
-                {tokenSelecionado
-                  ? `${tokenSelecionado.icone} ${tokenSelecionado.nome} (${tokenSelecionado.movimentoRestante}m livres) — Toque num quadrado azul para mover.`
-                  : "Toque em um personagem no grid para selecioná-lo."}
-              </span>
-            )}
-          </div>
-
-          {/* VIEWPORT ROLÁVEL DO MAPA (PERMITE ARRASTAR NO CELULAR) */}
-          <div className="flex-1 overflow-auto p-3 sm:p-6 flex items-start lg:items-center justify-start lg:justify-center custom-scrollbar">
+          {/* Etiqueta flutuante da distância medida na Régua */}
+          {ferramenta === "medir" && reguaInicio && reguaFim && (
             <div
-              className={`relative rounded-xl border-2 border-zinc-700 shadow-[0_0_50px_rgba(0,0,0,0.85)] overflow-hidden shrink-0 ${temaVisual.bgGrid}`}
+              className="absolute z-40 pointer-events-none -translate-x-1/2 -translate-y-full px-2.5 py-1 rounded-full bg-indigo-600 text-white text-[11px] font-bold shadow-lg whitespace-nowrap"
               style={{
-                backgroundImage: cenarioAtual.fundoUrl
-                  ? `url(${cenarioAtual.fundoUrl})`
-                  : "none",
-                backgroundSize: "cover",
-                backgroundPosition: "center",
+                left: `${reguaFim.x * tamanhoCelula + tamanhoCelula / 2}px`,
+                top: `${Math.max(24, reguaFim.y * tamanhoCelula - 6)}px`,
               }}
             >
-              {cenarioAtual.fundoUrl && (
-                <div className="absolute inset-0 bg-black/35 pointer-events-none" />
+              {calcularDistanciaMetros(
+                reguaInicio.x,
+                reguaInicio.y,
+                reguaFim.x,
+                reguaFim.y
               )}
+              m (
+              {calcularQuadradosDistancia(
+                reguaInicio.x,
+                reguaInicio.y,
+                reguaFim.x,
+                reguaFim.y
+              )}
+              q)
+            </div>
+          )}
 
-              <div
-                className="grid relative z-10"
-                style={{
-                  gridTemplateColumns: `repeat(${cenarioAtual.largura}, ${tamanhoCelula}px)`,
-                  gridTemplateRows: `repeat(${cenarioAtual.altura}, ${tamanhoCelula}px)`,
-                }}
-              >
-                {Array.from({ length: cenarioAtual.altura }).map((_, y) =>
-                  Array.from({ length: cenarioAtual.largura }).map((__, x) => {
-                    const prop = propNaCelula(x, y);
-                    const tok = tokenNaCelula(x, y);
-                    const isTokenSel = tok && tok.id === tokenSelecionadoId;
-                    const isTokenVez =
-                      tok && tokenDoTurno && tok.id === tokenDoTurno.id;
+          {/* Grade de Células */}
+          <div
+            className="grid relative z-10"
+            style={{
+              gridTemplateColumns: `repeat(${cenarioAtual.largura}, ${tamanhoCelula}px)`,
+              gridTemplateRows: `repeat(${cenarioAtual.altura}, ${tamanhoCelula}px)`,
+            }}
+          >
+            {Array.from({ length: cenarioAtual.altura }).map((_, y) =>
+              Array.from({ length: cenarioAtual.largura }).map((__, x) => {
+                const prop = propNaCelula(x, y);
+                const tok = tokenNaCelula(x, y);
+                const isSel = tok && tok.id === tokenSelecionadoId;
+                const isVez = tok && tokenDoTurno && tok.id === tokenDoTurno.id;
 
-                    let alcançavelMovimento = false;
-                    let custoCelula = 0;
-                    if (
-                      modoInteracao === "mover" &&
-                      tokenSelecionado &&
-                      podeControlarToken(tokenSelecionado) &&
-                      !tok &&
-                      tokenSelecionado.hpAtual > 0
-                    ) {
-                      custoCelula = custoMovimentoParaCelula(
-                        tokenSelecionado.x,
-                        tokenSelecionado.y,
-                        x,
-                        y
-                      );
-                      const limiteMov = combateIniciado
-                        ? tokenSelecionado.movimentoRestante
-                        : tokenSelecionado.deslocamentoMax;
-                      alcançavelMovimento =
-                        custoCelula > 0 && custoCelula <= limiteMov;
-                    }
+                // Destaque suave apenas quando necessário (sem poluir o mapa!)
+                let dentroAlcanceAcao = false;
+                if (
+                  ferramenta === "alvo" &&
+                  acaoSelecionada &&
+                  tokenSelecionado
+                ) {
+                  const dist = calcularDistanciaMetros(
+                    tokenSelecionado.x,
+                    tokenSelecionado.y,
+                    x,
+                    y
+                  );
+                  dentroAlcanceAcao = dist <= acaoSelecionada.alcanceMetros;
+                }
 
-                    let dentroAlcanceAcao = false;
-                    if (
-                      modoInteracao === "acao" &&
-                      acaoSelecionada &&
-                      tokenSelecionado
-                    ) {
-                      const dist = calcularDistanciaMetros(
-                        tokenSelecionado.x,
-                        tokenSelecionado.y,
-                        x,
-                        y
-                      );
-                      dentroAlcanceAcao = dist <= acaoSelecionada.alcanceMetros;
-                    }
+                let alcanceTurno = false;
+                if (
+                  combateIniciado &&
+                  ferramenta === "mover" &&
+                  tokenSelecionado &&
+                  podeControlarToken(tokenSelecionado) &&
+                  !tok
+                ) {
+                  const custo = custoMovimentoParaCelula(
+                    tokenSelecionado.x,
+                    tokenSelecionado.y,
+                    x,
+                    y
+                  );
+                  alcanceTurno =
+                    custo > 0 && custo <= tokenSelecionado.movimentoRestante;
+                }
 
-                    const coordLabel = `${String.fromCharCode(65 + x)}${y + 1}`;
-                    const catalogoProp = prop
-                      ? PROPS_CATALOGO.find((p) => p.tipo === prop.tipo)
-                      : null;
-
-                    return (
+                return (
+                  <div
+                    key={`${x}-${y}`}
+                    onClick={() => void handleCellClick(x, y)}
+                    onMouseEnter={() => {
+                      if (
+                        ferramenta === "medir" &&
+                        reguaInicio &&
+                        !reguaFim?.fixado
+                      ) {
+                        setReguaFim({ x, y, fixado: false });
+                      }
+                    }}
+                    onDragOver={(e) => e.preventDefault()}
+                    onDrop={(e) => void handleDropNaCelula(e, x, y)}
+                    className={`relative flex items-center justify-center transition-colors ${
+                      cenarioAtual.mostrarGrade
+                        ? "border border-white/[0.08]"
+                        : "border border-transparent"
+                    } ${
+                      ferramenta === "posicionar" || ferramenta === "objetos"
+                        ? "cursor-crosshair hover:bg-indigo-500/20"
+                        : "cursor-pointer hover:bg-white/[0.04]"
+                    } ${
+                      dentroAlcanceAcao
+                        ? acaoSelecionada?.tipo === "cura"
+                          ? "bg-emerald-500/20"
+                          : "bg-red-500/20"
+                        : alcanceTurno
+                          ? "bg-indigo-500/10"
+                          : ""
+                    }`}
+                  >
+                    {/* Objeto / Prop de Cenário */}
+                    {prop && (
                       <div
-                        key={`${x}-${y}`}
-                        onClick={() => handleCellClick(x, y)}
-                        className={`relative border ${temaVisual.borderColor} flex items-center justify-center cursor-pointer transition-all ${
-                          alcançavelMovimento
-                            ? "bg-sky-500/20 hover:bg-sky-400/35 border-sky-400/50"
-                            : dentroAlcanceAcao
-                              ? acaoSelecionada?.tipo === "cura"
-                                ? "bg-emerald-500/25 hover:bg-emerald-400/40 border-emerald-400/60"
-                                : "bg-red-500/25 hover:bg-red-500/40 border-red-400/60"
-                              : temaVisual.cellBg
-                        }`}
+                        title={prop.nome}
+                        className="w-4/5 h-4/5 rounded-lg bg-black/35 backdrop-blur-[1px] border border-white/10 flex items-center justify-center text-base pointer-events-none"
                       >
-                        <span className="absolute top-0.5 left-0.5 text-[7px] text-zinc-500/60 font-mono pointer-events-none">
-                          {coordLabel}
+                        <span>{prop.icone}</span>
+                      </div>
+                    )}
+
+                    {/* Token Circular Limpo Estilo Owlbear Rodeo */}
+                    {tok && (
+                      <div
+                        draggable={podeControlarToken(tok)}
+                        onDragStart={() =>
+                          setArrastandoItem({ tipo: "token", id: tok.id })
+                        }
+                        onDragEnd={() => setArrastandoItem(null)}
+                        className={`relative z-20 w-[84%] h-[84%] rounded-full flex items-center justify-center shadow-lg transition-transform ${
+                          podeControlarToken(tok)
+                            ? "cursor-grab active:cursor-grabbing"
+                            : "cursor-pointer"
+                        } ${
+                          tok.faccao === "inimigo"
+                            ? "bg-zinc-900 border-[2.5px] border-rose-500 text-white"
+                            : tok.faccao === "neutro"
+                              ? "bg-zinc-900 border-[2.5px] border-amber-400 text-white"
+                              : "bg-zinc-900 border-[2.5px] border-emerald-400 text-white"
+                        } ${
+                          isSel
+                            ? "scale-110 ring-2 ring-indigo-400 shadow-[0_0_18px_rgba(129,140,248,0.65)]"
+                            : ""
+                        } ${isVez ? "ring-2 ring-amber-400" : ""} ${
+                          tok.hpAtual <= 0 ? "grayscale opacity-55" : ""
+                        } ${tok.oculto ? "opacity-55 border-dashed" : ""}`}
+                      >
+                        <span className="text-base leading-none">
+                          {tok.hpAtual <= 0 ? "💀" : tok.icone}
                         </span>
 
-                        {alcançavelMovimento && tamanhoCelula >= 38 && (
-                          <span className="absolute bottom-0.5 right-0.5 text-[7px] text-sky-300/80 font-mono pointer-events-none">
-                            {custoCelula}m
-                          </span>
-                        )}
-
-                        {prop && (
-                          <div
-                            className={`w-4/5 h-4/5 rounded-md border flex items-center justify-center text-base shadow-inner ${
-                              catalogoProp?.cor || "bg-stone-800 border-stone-600"
-                            }`}
-                          >
-                            <span>{prop.icone}</span>
+                        {/* Barra de vida minimalista discreta apenas se ferido ou selecionado */}
+                        {(isSel || tok.hpAtual < tok.hpMax) && (
+                          <div className="absolute -top-1.5 w-4/5 h-1 bg-zinc-950/90 rounded-full overflow-hidden border border-white/10">
+                            <div
+                              className={`h-full transition-all ${
+                                tok.hpAtual <= tok.hpMax * 0.3
+                                  ? "bg-rose-500"
+                                  : "bg-emerald-400"
+                              }`}
+                              style={{
+                                width: `${Math.max(
+                                  0,
+                                  Math.min(100, (tok.hpAtual / tok.hpMax) * 100)
+                                )}%`,
+                              }}
+                            />
                           </div>
                         )}
 
-                        {tok && (
-                          <div
-                            className={`relative z-20 w-[86%] h-[86%] rounded-full flex flex-col items-center justify-center shadow-lg transition-transform ${
-                              tok.faccao === "inimigo"
-                                ? "bg-red-950 border-2 border-red-500 text-red-100"
-                                : tok.faccao === "neutro"
-                                  ? "bg-amber-950 border-2 border-amber-400 text-amber-100"
-                                  : "bg-emerald-950 border-2 border-emerald-400 text-emerald-100"
-                            } ${
-                              isTokenSel
-                                ? "scale-110 ring-2 ring-white shadow-[0_0_15px_rgba(255,255,255,0.6)]"
-                                : ""
-                            } ${
-                              isTokenVez ? "ring-4 ring-amber-400/80" : ""
-                            } ${tok.hpAtual <= 0 ? "grayscale opacity-60" : ""} ${
-                              tok.oculto ? "opacity-60 border-dashed" : ""
-                            }`}
-                          >
-                            <span className="text-sm sm:text-base leading-none">
-                              {tok.hpAtual <= 0 ? "💀" : tok.icone}
-                            </span>
-                            {tamanhoCelula >= 38 && (
-                              <span className="text-[7px] font-bold max-w-[34px] truncate leading-tight">
-                                {tok.nome.split(" ")[0]}
+                        {/* Rótulo de nome limpo estilo Owlbear abaixo do token */}
+                        {tamanhoCelula >= 36 && (
+                          <span className="absolute -bottom-2 px-1.5 py-0.2 rounded-full bg-zinc-950/90 border border-white/10 text-[8px] font-semibold text-zinc-200 max-w-[54px] truncate pointer-events-none shadow">
+                            {tok.nome.split(" ")[0]}
+                          </span>
+                        )}
+
+                        {/* Indicadores sutis de status/oculto */}
+                        {(tok.oculto || (tok.condicoes || []).length > 0) && (
+                          <div className="absolute -top-1 -right-1 flex">
+                            {tok.oculto && (
+                              <span className="text-[9px] bg-zinc-900 rounded-full px-0.5 border border-white/15">
+                                👁️‍🗨️
                               </span>
                             )}
-
-                            <div className="absolute -top-1 w-4/5 h-1.5 bg-zinc-950 rounded-full overflow-hidden border border-zinc-700">
-                              <div
-                                className={`h-full transition-all ${
-                                  tok.hpAtual <= tok.hpMax * 0.3
-                                    ? "bg-red-500"
-                                    : tok.hpAtual <= tok.hpMax * 0.6
-                                      ? "bg-amber-400"
-                                      : "bg-emerald-500"
-                                }`}
-                                style={{
-                                  width: `${Math.max(
-                                    0,
-                                    Math.min(100, (tok.hpAtual / tok.hpMax) * 100)
-                                  )}%`,
-                                }}
-                              />
-                            </div>
-
-                            <div className="absolute -bottom-1 flex items-center gap-0.5">
-                              {tok.esquivando && (
-                                <span className="text-[8px] bg-sky-900 border border-sky-400 rounded-full px-0.5">
-                                  🛡️
+                            {(tok.condicoes || []).slice(0, 1).map((cid) => {
+                              const cObj = CONDICOES_DND.find((c) => c.id === cid);
+                              return cObj ? (
+                                <span
+                                  key={cid}
+                                  className="text-[9px] bg-zinc-900 rounded-full px-0.5 border border-white/15"
+                                >
+                                  {cObj.icone}
                                 </span>
-                              )}
-                              {tok.oculto && (
-                                <span className="text-[8px] bg-purple-900 border border-purple-400 rounded-full px-0.5">
-                                  👻
-                                </span>
-                              )}
-                              {(tok.condicoes || []).slice(0, 2).map((cid) => {
-                                const cObj = CONDICOES_DND.find((c) => c.id === cid);
-                                return cObj ? (
-                                  <span
-                                    key={cid}
-                                    className="text-[8px] bg-zinc-900 border border-zinc-600 rounded-full px-0.5"
-                                  >
-                                    {cObj.icone}
-                                  </span>
-                                ) : null;
-                              })}
-                            </div>
+                              ) : null;
+                            })}
                           </div>
                         )}
                       </div>
-                    );
-                  })
-                )}
-              </div>
-            </div>
+                    )}
+                  </div>
+                );
+              })
+            )}
           </div>
         </div>
+      </div>
 
-        {/* PAINEL TÁTICO LATERAL (NO DESKTOP SEMPRE VISÍVEL; NO MOBILE É UMA GAVETA DESLIZANTE) */}
-        <aside
-          className={`bg-zinc-900 border-t lg:border-t-0 lg:border-l border-zinc-800 flex flex-col shrink-0 transition-all z-30 ${
-            gavetaMobileAberta
-              ? "fixed inset-x-0 bottom-12 max-h-[65dvh] rounded-t-2xl shadow-[0_-10px_40px_rgba(0,0,0,0.9)] lg:static lg:max-h-none lg:rounded-none lg:w-96"
-              : "hidden lg:flex lg:w-96"
-          }`}
-        >
-          {/* Cabeçalho da Gaveta no Mobile */}
-          <div className="flex lg:hidden items-center justify-between px-4 py-2 border-b border-zinc-800 bg-zinc-950 rounded-t-2xl">
-            <span className="text-xs font-bold uppercase text-amber-400">
-              {abaLateral === "combate" && "⚔️ Ações do Personagem"}
-              {abaLateral === "spawn" && "🧙‍♂️ Fichas & Spawn"}
-              {abaLateral === "cenario" && "🗺️ Editor de Cenário"}
-              {abaLateral === "logs" && "🎲 Registro de Combate"}
+      {/* =================================================================== */}
+      {/* 2. ILHA SUPERIOR ESQUERDA: SALA, CONVITE E GRUPO                    */}
+      {/* =================================================================== */}
+      <div className="fixed top-3 left-3 z-40 flex items-center gap-1.5">
+        <div className="bg-zinc-900/90 backdrop-blur-md border border-white/10 rounded-2xl p-1.5 shadow-2xl flex items-center gap-1">
+          <button
+            onClick={() => navigate("/lobby")}
+            title="Voltar para Suas Salas"
+            className="w-8 h-8 rounded-xl hover:bg-zinc-800 text-zinc-400 hover:text-white flex items-center justify-center transition-colors text-sm"
+          >
+            ←
+          </button>
+
+          <button
+            onClick={() => void copiarCodigoSala()}
+            title="Clique para copiar o código de convite da sala"
+            className="px-2.5 py-1 rounded-xl hover:bg-zinc-800 text-left transition-colors hidden sm:flex items-center gap-2"
+          >
+            <span className="text-xs font-semibold text-white max-w-[130px] truncate">
+              {mesaInfo?.nome || "Sala"}
             </span>
-            <button
-              onClick={() => setGavetaMobileAberta(false)}
-              className="text-zinc-400 hover:text-white text-xs font-bold px-2 py-1 bg-zinc-800 rounded"
-            >
-              ▼ Fechar Painel
-            </button>
-          </div>
+            <span className="text-[10px] font-mono text-indigo-300 bg-indigo-500/15 px-1.5 py-0.5 rounded-md">
+              {codigoCopiado
+                ? "Copiado!"
+                : `#${mesaInfo?.codigoConvite || tenantId}`}
+            </span>
+          </button>
 
-          {/* Abas visíveis no Desktop */}
-          <div className="hidden lg:grid grid-cols-3 border-b border-zinc-800 bg-zinc-950/60">
-            <button
-              onClick={() => {
-                setAbaLateral("combate");
-                setModoInteracao("mover");
-              }}
-              className={`py-2.5 text-xs font-bold uppercase tracking-wider border-b-2 transition-colors ${
-                abaLateral === "combate"
-                  ? "border-red-500 text-red-400 bg-zinc-900"
-                  : "border-transparent text-zinc-500 hover:text-zinc-300"
-              }`}
-            >
-              ⚔️ Ações
-            </button>
-            <button
-              onClick={() => {
-                setAbaLateral("spawn");
-                if (isMestre) setModoInteracao("spawn");
-              }}
-              className={`py-2.5 text-xs font-bold uppercase tracking-wider border-b-2 transition-colors ${
-                abaLateral === "spawn"
-                  ? "border-emerald-500 text-emerald-400 bg-zinc-900"
-                  : "border-transparent text-zinc-500 hover:text-zinc-300"
-              }`}
-            >
-              🧙‍♂️ Fichas/Spawn
-            </button>
-            <button
-              onClick={() => {
-                setAbaLateral("cenario");
-                if (isMestre) setModoInteracao("prop");
-              }}
-              className={`py-2.5 text-xs font-bold uppercase tracking-wider border-b-2 transition-colors ${
-                abaLateral === "cenario"
-                  ? "border-amber-500 text-amber-400 bg-zinc-900"
-                  : "border-transparent text-zinc-500 hover:text-zinc-300"
-              }`}
-            >
-              🗺️ Cenários
-            </button>
-          </div>
-
-          <div className="flex-1 overflow-y-auto p-3.5 sm:p-4 space-y-4 custom-scrollbar">
-            {abaLateral === "combate" && (
-              <>
-                {!tokenSelecionado ? (
-                  <div className="bg-zinc-950 border border-zinc-800 rounded-xl p-6 text-center space-y-3">
-                    <p className="text-zinc-400 text-sm">
-                      Nenhum combatente selecionado no tabuleiro.
-                    </p>
-                    {isMestre && (
-                      <button
-                        onClick={() => {
-                          setAbaLateral("spawn");
-                          setModoInteracao("spawn");
-                        }}
-                        className="bg-emerald-700 hover:bg-emerald-600 text-white text-xs font-bold px-4 py-2 rounded-lg transition-colors"
-                      >
-                        + Spawnar Personagens da Ficha
-                      </button>
-                    )}
-                  </div>
-                ) : (
-                  <div className="space-y-4">
-                    <div className="bg-zinc-950 border border-zinc-800 rounded-xl p-3.5 space-y-3">
-                      <div className="flex justify-between items-start gap-2">
-                        <div>
-                          <div className="flex items-center gap-1.5">
-                            <span className="text-xl">{tokenSelecionado.icone}</span>
-                            <h3 className="font-bold text-white text-base leading-tight">
-                              {tokenSelecionado.nome}
-                            </h3>
-                          </div>
-                          <p className="text-[11px] text-zinc-400 mt-0.5">
-                            {tokenSelecionado.ficha?.raca || "Aventureiro"} •{" "}
-                            {tokenSelecionado.ficha?.classe || "Combatente"} (Nv{" "}
-                            {tokenSelecionado.ficha?.nivel || 1})
-                          </p>
-                        </div>
-
-                        <div className="flex gap-1">
-                          {isMestre && (
-                            <button
-                              onClick={alternarVisibilidadeToken}
-                              className={`px-2 py-1 rounded text-[11px] border ${
-                                tokenSelecionado.oculto
-                                  ? "bg-purple-900 border-purple-400 text-purple-100"
-                                  : "bg-zinc-800 border-zinc-700 text-zinc-300"
-                              }`}
-                            >
-                              {tokenSelecionado.oculto ? "👁️ Revelar" : "👻"}
-                            </button>
-                          )}
-                          <button
-                            onClick={() => {
-                              setFichaModalDados({
-                                id:
-                                  typeof tokenSelecionado.fichaId === "number"
-                                    ? tokenSelecionado.fichaId
-                                    : null,
-                                objeto: tokenSelecionado.ficha,
-                              });
-                              setFichaModalAberta(true);
-                            }}
-                            className="bg-zinc-800 hover:bg-zinc-700 text-zinc-200 px-2.5 py-1 rounded text-[11px] font-semibold border border-zinc-700"
-                          >
-                            📜 Ficha
-                          </button>
-                          {isMestre && (
-                            <button
-                              onClick={() => removerToken(tokenSelecionado.id)}
-                              className="bg-red-950/60 hover:bg-red-900 text-red-300 px-2 py-1 rounded text-[11px] border border-red-800/60"
-                            >
-                              🗑️
-                            </button>
-                          )}
-                        </div>
-                      </div>
-
-                      <div className="grid grid-cols-4 gap-2 text-center">
-                        <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-1.5">
-                          <span className="block text-[9px] text-zinc-500 uppercase">
-                            PV
-                          </span>
-                          <span className="text-sm font-bold text-emerald-400">
-                            {tokenSelecionado.hpAtual}/{tokenSelecionado.hpMax}
-                          </span>
-                        </div>
-                        <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-1.5">
-                          <span className="block text-[9px] text-zinc-500 uppercase">
-                            CA
-                          </span>
-                          <span className="text-sm font-bold text-white">
-                            🛡️ {tokenSelecionado.ca}
-                          </span>
-                        </div>
-                        <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-1.5">
-                          <span className="block text-[9px] text-zinc-500 uppercase">
-                            Movimento
-                          </span>
-                          <span className="text-sm font-bold text-sky-400">
-                            {tokenSelecionado.movimentoRestante}m
-                          </span>
-                        </div>
-                        <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-1.5">
-                          <span className="block text-[9px] text-zinc-500 uppercase">
-                            Iniciativa
-                          </span>
-                          <span className="text-sm font-bold text-amber-400">
-                            🎲 {tokenSelecionado.iniciativa}
-                          </span>
-                        </div>
-                      </div>
-
-                      <div>
-                        <span className="block text-[9px] text-zinc-500 uppercase font-bold mb-1">
-                          Condições de Status D&D 5e:
-                        </span>
-                        <div className="flex flex-wrap gap-1">
-                          {CONDICOES_DND.map((c) => {
-                            const ativa = (
-                              tokenSelecionado.condicoes || []
-                            ).includes(c.id);
-                            return (
-                              <button
-                                key={c.id}
-                                onClick={() => void alternarCondicaoToken(c.id)}
-                                className={`px-2 py-1 rounded text-[10px] font-semibold border transition-colors ${
-                                  ativa
-                                    ? "bg-purple-900/80 border-purple-400 text-white"
-                                    : "bg-zinc-900 border-zinc-800 text-zinc-400"
-                                }`}
-                              >
-                                {c.icone} {c.nome}
-                              </button>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    </div>
-
-                    {!podeControlarToken(tokenSelecionado) ? (
-                      <div className="bg-zinc-950 border border-zinc-800 rounded-xl p-4 text-center text-xs text-zinc-400">
-                        🔒 Este combatente é controlado pelo Mestre ou por outro jogador.
-                      </div>
-                    ) : (
-                      <>
-                        <div>
-                          <label className="block text-[10px] text-zinc-400 uppercase font-bold mb-1.5">
-                            Modo de Rolagem (1d20)
-                          </label>
-                          <div className="grid grid-cols-3 gap-1.5 bg-zinc-950 p-1 rounded-lg border border-zinc-800">
-                            {[
-                              { id: "desvantagem", label: "Desvantagem" },
-                              { id: "normal", label: "Normal" },
-                              { id: "vantagem", label: "Vantagem" },
-                            ].map((m) => (
-                              <button
-                                key={m.id}
-                                onClick={() => setModoRolagemD20(m.id)}
-                                className={`py-1.5 rounded text-[11px] font-bold transition-colors ${
-                                  modoRolagemD20 === m.id
-                                    ? m.id === "vantagem"
-                                      ? "bg-emerald-700 text-white"
-                                      : m.id === "desvantagem"
-                                        ? "bg-red-800 text-white"
-                                        : "bg-zinc-700 text-white"
-                                    : "text-zinc-400"
-                                }`}
-                              >
-                                {m.label}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-
-                        {tokenSelecionado.hpAtual <= 0 ? (
-                          <div className="bg-red-950/40 border border-red-800 rounded-xl p-4 text-center space-y-3">
-                            <h4 className="text-red-400 font-bold text-sm uppercase">
-                              💀 Personagem Caído (0 PV)
-                            </h4>
-                            <p className="text-xs text-zinc-300">
-                              Sucessos: {tokenSelecionado.morteSucessos || 0}/3 • Falhas:{" "}
-                              {tokenSelecionado.morteFalhas || 0}/3
-                            </p>
-                            <button
-                              onClick={rolarSalvaguardaMorte}
-                              className="w-full bg-red-700 hover:bg-red-600 text-white font-bold py-2.5 rounded-lg text-xs shadow"
-                            >
-                              🎲 Rolar Salvaguarda Contra a Morte (1d20)
-                            </button>
-                          </div>
-                        ) : (
-                          <>
-                            <div className="space-y-2">
-                              <h4 className="text-[11px] font-bold uppercase text-zinc-400">
-                                ⚔️ Ataques, Magias & Curas (Toque e depois escolha o Alvo no Mapa)
-                              </h4>
-                              {acoesDisponiveis.map((acao) => {
-                                const ativa = acaoSelecionada?.id === acao.id;
-                                return (
-                                  <button
-                                    key={acao.id}
-                                    onClick={() => {
-                                      if (ativa) {
-                                        setAcaoSelecionada(null);
-                                        setModoInteracao("mover");
-                                      } else {
-                                        setAcaoSelecionada(acao);
-                                        setModoInteracao("acao");
-                                        setGavetaMobileAberta(false);
-                                      }
-                                    }}
-                                    className={`w-full text-left p-2.5 rounded-xl border transition-all flex items-center justify-between gap-2 ${
-                                      ativa
-                                        ? acao.tipo === "cura"
-                                          ? "bg-emerald-950/80 border-emerald-400 ring-2 ring-emerald-500/30"
-                                          : "bg-red-950/80 border-red-400 ring-2 ring-red-500/30"
-                                        : "bg-zinc-950/90 hover:bg-zinc-800/80 border-zinc-800"
-                                    }`}
-                                  >
-                                    <div className="min-w-0">
-                                      <div className="flex items-center gap-1.5">
-                                        <span>{acao.icone}</span>
-                                        <span className="font-bold text-xs text-white truncate">
-                                          {acao.nome}
-                                        </span>
-                                        <span className="text-[10px] px-1.5 rounded bg-zinc-800 text-zinc-300 font-mono">
-                                          {acao.alcanceMetros}m
-                                        </span>
-                                      </div>
-                                      <p className="text-[10px] text-zinc-400 truncate mt-0.5">
-                                        {acao.descricao}
-                                      </p>
-                                    </div>
-
-                                    <div className="text-right shrink-0">
-                                      {acao.tipo === "ataque" ? (
-                                        <>
-                                          <span className="block text-[10px] text-amber-400 font-mono font-bold">
-                                            Acerto{" "}
-                                            {acao.bonusAtaque >= 0
-                                              ? `+${acao.bonusAtaque}`
-                                              : acao.bonusAtaque}
-                                          </span>
-                                          <span className="block text-xs text-red-400 font-mono font-bold">
-                                            {acao.dano}
-                                            {acao.bonusDano > 0
-                                              ? `+${acao.bonusDano}`
-                                              : acao.bonusDano < 0
-                                                ? acao.bonusDano
-                                                : ""}
-                                          </span>
-                                        </>
-                                      ) : (
-                                        <span className="block text-xs text-emerald-400 font-mono font-bold">
-                                          +{acao.dano}
-                                          {acao.bonusDano > 0 ? `+${acao.bonusDano}` : ""} PV
-                                        </span>
-                                      )}
-                                    </div>
-                                  </button>
-                                );
-                              })}
-                            </div>
-
-                            <div className="pt-2 border-t border-zinc-800">
-                              <div className="grid grid-cols-2 gap-2">
-                                <button
-                                  onClick={usarDisparada}
-                                  className="bg-zinc-950 hover:bg-zinc-800 border border-zinc-800 text-sky-300 py-2 px-3 rounded-lg text-xs font-bold"
-                                >
-                                  🏃 Disparada (+Mov)
-                                </button>
-                                <button
-                                  onClick={usarEsquivar}
-                                  className="bg-zinc-950 hover:bg-zinc-800 border border-zinc-800 text-amber-300 py-2 px-3 rounded-lg text-xs font-bold"
-                                >
-                                  🛡️ Esquivar (Dodge)
-                                </button>
-                              </div>
-                            </div>
-                          </>
-                        )}
-                      </>
-                    )}
-                  </div>
-                )}
-              </>
+          <button
+            onClick={() =>
+              setPainelAberto(painelAberto === "grupo" ? null : "grupo")
+            }
+            title="Jogadores e Fichas da Sala"
+            className={`relative px-2.5 h-8 rounded-xl text-xs font-medium flex items-center gap-1.5 transition-colors ${
+              painelAberto === "grupo"
+                ? "bg-indigo-600 text-white"
+                : "hover:bg-zinc-800 text-zinc-300"
+            }`}
+          >
+            <span>👥</span>
+            <span className="hidden md:inline">Grupo</span>
+            {notificacoesGrupo > 0 && (
+              <span className="w-4 h-4 rounded-full bg-amber-500 text-zinc-950 text-[10px] font-bold flex items-center justify-center">
+                {notificacoesGrupo}
+              </span>
             )}
+          </button>
+        </div>
 
-            {abaLateral === "spawn" && (
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <h4 className="text-xs font-bold uppercase text-emerald-400">
-                    🧙‍♂️ Fichas ({fichasMesa.length})
-                  </h4>
-                  <button
-                    onClick={gerarFichasPadroesNaMesa}
-                    disabled={carregandoFichas}
-                    className="bg-emerald-700 hover:bg-emerald-600 text-white text-[11px] font-bold px-2.5 py-1.5 rounded-lg shadow"
-                  >
-                    {carregandoFichas ? "Gerando..." : "⚡ Fichas Padrões D&D"}
-                  </button>
-                </div>
-
-                {isMestre && (
-                  <div className="bg-zinc-950 border border-zinc-800 rounded-xl p-3 space-y-3">
-                    <div className="grid grid-cols-3 gap-1.5">
-                      {[
-                        { id: "heroi", label: "🛡️ Herói", cor: "bg-emerald-700" },
-                        { id: "inimigo", label: "👹 Inimigo", cor: "bg-red-700" },
-                        { id: "neutro", label: "⚜️ NPC", cor: "bg-amber-700" },
-                      ].map((f) => (
-                        <button
-                          key={f.id}
-                          onClick={() => setFaccaoSpawn(f.id)}
-                          className={`py-1.5 rounded text-xs font-bold ${
-                            faccaoSpawn === f.id
-                              ? `${f.cor} text-white`
-                              : "bg-zinc-900 text-zinc-400 border border-zinc-800"
-                          }`}
-                        >
-                          {f.label}
-                        </button>
-                      ))}
-                    </div>
-
-                    <label className="flex items-center gap-2 text-xs text-purple-300 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={spawnOculto}
-                        onChange={(e) => setSpawnOculto(e.target.checked)}
-                        className="accent-purple-500"
-                      />
-                      👻 Spawnar Oculto dos Jogadores (Emboscada)
-                    </label>
-                  </div>
-                )}
-
-                <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
-                  {fichasMesa.map((f) => {
-                    const selecionada = String(f.id) === String(fichaParaSpawnId);
-                    const isMonstro =
-                      (f.classe || "").toLowerCase().includes("inimigo") ||
-                      (f.classe || "").toLowerCase().includes("chefe") ||
-                      (f.antecedente || "").toLowerCase().includes("monstro");
-                    return (
-                      <div
-                        key={f.id}
-                        onClick={() => {
-                          setFichaParaSpawnId(String(f.id));
-                          setFaccaoSpawn(isMonstro ? "inimigo" : "heroi");
-                          if (isMestre) {
-                            setModoInteracao("spawn");
-                            setGavetaMobileAberta(false);
-                          }
-                        }}
-                        className={`p-2.5 rounded-xl border cursor-pointer transition-all flex items-center justify-between ${
-                          selecionada
-                            ? "bg-emerald-950/60 border-emerald-500 text-white"
-                            : "bg-zinc-950 border-zinc-800 text-zinc-300"
-                        }`}
-                      >
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-1.5">
-                            <span>
-                              {obterIconeFicha(f, isMonstro ? "inimigo" : "heroi")}
-                            </span>
-                            <span className="font-bold text-xs truncate">
-                              {f.nome}
-                            </span>
-                          </div>
-                          <span className="text-[10px] text-zinc-400 block">
-                            {f.raca} • {f.classe} (PV {f.pontosDeVidaMaximos} | CA{" "}
-                            {f.classeArmadura})
-                          </span>
-                        </div>
-
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setFichaModalDados({
-                              id: typeof f.id === "number" ? f.id : null,
-                              objeto: f,
-                            });
-                            setFichaModalAberta(true);
-                          }}
-                          className="bg-zinc-800 hover:bg-zinc-700 text-zinc-300 px-2 py-1 rounded text-[10px]"
-                        >
-                          📜 Ver
-                        </button>
-                      </div>
-                    );
-                  })}
-                </div>
+        {/* Popover de Grupo / Admissão de Jogadores (Estilo Owlbear Rodeo!) */}
+        {painelAberto === "grupo" && (
+          <div className="absolute top-12 left-0 w-72 sm:w-80 bg-zinc-900/95 backdrop-blur-md border border-white/10 rounded-2xl p-4 shadow-2xl space-y-3">
+            <div className="flex items-center justify-between border-b border-white/5 pb-2.5">
+              <div>
+                <h4 className="text-xs font-bold text-white">
+                  {mesaInfo?.nome || "Sala Atual"}
+                </h4>
+                <button
+                  onClick={() => void copiarCodigoSala()}
+                  className="text-[11px] font-mono text-indigo-400 hover:text-indigo-300"
+                >
+                  Convite: #{mesaInfo?.codigoConvite || tenantId} (copiar)
+                </button>
               </div>
-            )}
+              <button
+                onClick={() => setPainelAberto(null)}
+                className="text-zinc-500 hover:text-white text-xs"
+              >
+                ✕
+              </button>
+            </div>
 
-            {abaLateral === "cenario" && (
-              <div className="space-y-4">
-                {!isMestre ? (
-                  <p className="text-xs text-zinc-400 bg-zinc-950 p-4 rounded-xl border border-zinc-800">
-                    Apenas o Mestre pode editar os props e alternar cenários durante a batalha.
-                  </p>
-                ) : (
-                  <>
-                    <div className="grid grid-cols-2 gap-2 md:hidden">
-                      <button
-                        onClick={realizarDescansoCurto}
-                        className="bg-zinc-800 border border-zinc-700 text-zinc-200 py-2 rounded-lg text-xs font-bold"
-                      >
-                        ⛺ Descanso Curto
-                      </button>
-                      <button
-                        onClick={realizarDescansoLongo}
-                        className="bg-indigo-950 border border-indigo-700 text-indigo-200 py-2 rounded-lg text-xs font-bold"
-                      >
-                        🌙 Descanso Longo
-                      </button>
-                    </div>
-
-                    <div className="bg-zinc-950 border border-zinc-800 rounded-xl p-3 space-y-2.5">
-                      <h4 className="text-[11px] font-bold uppercase text-amber-400">
-                        🗺️ Trocar Cenário Instantaneamente
-                      </h4>
-                      <div className="grid grid-cols-1 gap-1.5 max-h-36 overflow-y-auto pr-1">
-                        {[...CENARIOS_PADROES, ...cenariosSalvos].map((cen) => (
-                          <button
-                            key={cen.id}
-                            onClick={() => aplicarCenario(cen)}
-                            className={`text-left px-2.5 py-1.5 rounded-lg border text-xs flex justify-between items-center ${
-                              cenarioAtual.nome === cen.nome
-                                ? "bg-amber-950/70 border-amber-500 text-amber-200 font-bold"
-                                : "bg-zinc-900 border-zinc-800 text-zinc-300"
-                            }`}
-                          >
-                            <span className="truncate">{cen.nome}</span>
-                            <span className="text-[10px] text-zinc-500 uppercase">
-                              {cen.tema}
-                            </span>
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-
-                    <div className="bg-zinc-950 border border-zinc-800 rounded-xl p-3 space-y-2.5">
-                      <div className="flex justify-between items-center">
-                        <h4 className="text-[11px] font-bold uppercase text-zinc-400">
-                          🧱 Adicionar Props no Cenário
-                        </h4>
-                        <div className="flex gap-1">
-                          <button
-                            onClick={() => {
-                              setModoInteracao("prop");
-                              setModoBorrachaProp(!modoBorrachaProp);
-                            }}
-                            className={`px-2 py-0.5 rounded text-[10px] font-bold border ${
-                              modoBorrachaProp
-                                ? "bg-red-700 border-red-400 text-white"
-                                : "bg-zinc-900 border-zinc-700 text-zinc-400"
-                            }`}
-                          >
-                            🧹 Borracha
-                          </button>
-                          <button
-                            onClick={() => {
-                              const limpo = { ...cenarioAtual, props: [] };
-                              setCenarioAtual(limpo);
-                              void transmitirEstadoGeral({ cenarioAtual: limpo });
-                            }}
-                            className="px-2 py-0.5 rounded text-[10px] bg-zinc-900 text-zinc-400 border border-zinc-800"
-                          >
-                            Limpar
-                          </button>
-                        </div>
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-1.5 max-h-44 overflow-y-auto pr-1">
-                        {PROPS_CATALOGO.map((p) => {
-                          const ativo =
-                            !modoBorrachaProp && propSelecionado?.tipo === p.tipo;
-                          return (
-                            <button
-                              key={p.tipo}
-                              onClick={() => {
-                                setPropSelecionado(p);
-                                setModoBorrachaProp(false);
-                                setModoInteracao("prop");
-                              }}
-                              className={`p-2 rounded-lg border text-left flex items-center gap-2 ${
-                                ativo
-                                  ? "bg-amber-950/70 border-amber-400 text-white"
-                                  : "bg-zinc-900 border-zinc-800 text-zinc-300"
-                              }`}
-                            >
-                              <span className="text-base">{p.icone}</span>
-                              <span className="text-[11px] font-bold truncate">
-                                {p.nome}
-                              </span>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-
-                    <div className="bg-zinc-950 border border-zinc-800 rounded-xl p-3 space-y-2">
-                      <input
-                        type="text"
-                        value={nomeNovoCenario}
-                        onChange={(e) => setNomeNovoCenario(e.target.value)}
-                        placeholder={`Salvar como (ex: ${cenarioAtual.nome})`}
-                        className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-2.5 py-1.5 text-xs text-white"
-                      />
-                      <button
-                        onClick={salvarCenarioAtual}
-                        className="w-full bg-amber-600 hover:bg-amber-500 text-white font-bold py-2 rounded-lg text-xs"
-                      >
-                        💾 Salvar Cenário Atual
-                      </button>
-                    </div>
-                  </>
-                )}
-              </div>
-            )}
-
-            {/* ABA DE LOGS NO MOBILE */}
-            {abaLateral === "logs" && (
-              <div className="space-y-2 font-mono text-xs">
-                {logsCombate.map((log) => (
+            {/* Pedidos de entrada na sala */}
+            {isMestre && solicitacoes.length > 0 && (
+              <div className="space-y-1.5">
+                <span className="text-[10px] font-semibold uppercase text-amber-400">
+                  Pedindo para entrar ({solicitacoes.length})
+                </span>
+                {solicitacoes.map((s) => (
                   <div
-                    key={log.id}
-                    className={`p-2 rounded border ${
-                      log.tipo === "ataque"
-                        ? "bg-red-950/30 border-red-900/50 text-red-200"
-                        : log.tipo === "cura"
-                          ? "bg-emerald-950/30 border-emerald-900/50 text-emerald-200"
-                          : "bg-zinc-950 border-zinc-800 text-amber-200/90"
-                    }`}
+                    key={s.id}
+                    className="flex items-center justify-between bg-zinc-950/80 border border-white/10 px-3 py-2 rounded-xl text-xs"
                   >
-                    {log.horario && (
-                      <span className="text-[9px] text-zinc-500 mr-1.5">
-                        [{log.horario}]
-                      </span>
-                    )}
-                    <span>{log.texto}</span>
+                    <span className="font-medium text-white truncate pr-2">
+                      {s.nomeJogador}
+                    </span>
+                    <div className="flex gap-1 shrink-0">
+                      <button
+                        onClick={() => onAvaliarSolicitacao?.(s.id, false)}
+                        className="px-2 py-1 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-[11px]"
+                      >
+                        ✕
+                      </button>
+                      <button
+                        onClick={() => onAvaliarSolicitacao?.(s.id, true)}
+                        className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-semibold"
+                      >
+                        Aceitar
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>
             )}
-          </div>
 
-          {/* REGISTRO DE COMBATE FIXO NO RODAPÉ DO DESKTOP */}
-          <div className="hidden lg:flex h-52 border-t border-zinc-800 bg-zinc-950 flex-col">
-            <div className="px-3 py-1.5 border-b border-zinc-800 flex justify-between items-center">
-              <span className="text-[10px] font-bold uppercase tracking-widest text-zinc-400">
-                🎲 Registro de Combate D&D
-              </span>
+            {/* Fichas aguardando aprovação */}
+            {isMestre && fichasPendentesCount > 0 && (
+              <div className="space-y-1.5">
+                <span className="text-[10px] font-semibold uppercase text-indigo-300">
+                  Fichas pendentes ({fichasPendentesCount})
+                </span>
+                {fichasMesa
+                  .filter((f) => f.status === 0)
+                  .map((f) => (
+                    <div
+                      key={f.id}
+                      className="flex items-center justify-between bg-zinc-950/80 border border-white/10 px-3 py-2 rounded-xl text-xs"
+                    >
+                      <span className="truncate pr-2 text-zinc-200">
+                        {f.nome} ({f.classe})
+                      </span>
+                      <button
+                        onClick={() => void aprovarFichaRapido(f.id)}
+                        className="px-2.5 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-[11px] font-semibold shrink-0"
+                      >
+                        Aprovar
+                      </button>
+                    </div>
+                  ))}
+              </div>
+            )}
+
+            <div className="grid grid-cols-2 gap-2 pt-1">
+              <button
+                onClick={() => navigate("/criar-ficha")}
+                className="py-2 px-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold transition-colors"
+              >
+                + Nova Ficha
+              </button>
+              <button
+                onClick={() => navigate("/campanha")}
+                className="py-2 px-3 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-medium transition-colors"
+              >
+                Ver Todas Fichas
+              </button>
             </div>
-            <div className="flex-1 overflow-y-auto p-2.5 space-y-1.5 font-mono text-[11px] custom-scrollbar">
-              {logsCombate.map((log) => (
-                <div
-                  key={log.id}
-                  className={`p-1.5 rounded border ${
-                    log.tipo === "ataque"
-                      ? "bg-red-950/30 border-red-900/50 text-red-200"
-                      : log.tipo === "cura"
-                        ? "bg-emerald-950/30 border-emerald-900/50 text-emerald-200"
-                        : log.tipo === "erro"
-                          ? "bg-zinc-900 border-zinc-800 text-zinc-400"
-                          : "bg-zinc-900/60 border-zinc-800/80 text-amber-200/90"
+          </div>
+        )}
+      </div>
+
+      {/* =================================================================== */}
+      {/* 3. ILHA SUPERIOR CENTRAL: BARRA DE FERRAMENTAS OWLBEAR RODEO        */}
+      {/* =================================================================== */}
+      <div className="fixed top-3 left-1/2 -translate-x-1/2 z-40 flex flex-col items-center gap-2">
+        <div className="bg-zinc-900/90 backdrop-blur-md border border-white/10 rounded-2xl p-1.5 shadow-2xl flex items-center gap-1">
+          {/* Ferramenta Mover / Selecionar */}
+          <button
+            onClick={() => {
+              setFerramenta("mover");
+              setAcaoSelecionada(null);
+              setFichaParaPosicionar(null);
+              setReguaInicio(null);
+              setReguaFim(null);
+            }}
+            title="Selecionar e Mover (Arraste tokens pelo mapa)"
+            className={`px-3 h-8 rounded-xl text-xs font-medium flex items-center gap-1.5 transition-colors ${
+              ferramenta === "mover"
+                ? "bg-indigo-600 text-white shadow"
+                : "text-zinc-400 hover:text-white hover:bg-zinc-800"
+            }`}
+          >
+            <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M4 2l16 11-7 1.5 4 6.5-2.5 1.5-4-6.5L5 21V2z" />
+            </svg>
+            <span className="hidden sm:inline">Mover</span>
+          </button>
+
+          {/* Ferramenta Régua / Medir */}
+          <button
+            onClick={() => {
+              const nova = ferramenta === "medir" ? "mover" : "medir";
+              setFerramenta(nova);
+              setReguaInicio(null);
+              setReguaFim(null);
+            }}
+            title="Medir distância no mapa"
+            className={`px-3 h-8 rounded-xl text-xs font-medium flex items-center gap-1.5 transition-colors ${
+              ferramenta === "medir"
+                ? "bg-indigo-600 text-white shadow"
+                : "text-zinc-400 hover:text-white hover:bg-zinc-800"
+            }`}
+          >
+            <svg
+              className="w-3.5 h-3.5"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
+              <path d="M21.3 15.3a2.4 2.4 0 0 1 0 3.4l-2.6 2.6a2.4 2.4 0 0 1-3.4 0L2.7 8.7a2.4 2.4 0 0 1 0-3.4l2.6-2.6a2.4 2.4 0 0 1 3.4 0Z" />
+              <path d="m14.5 12.5 2-2M11.5 9.5l2-2M8.5 6.5l2-2" />
+            </svg>
+            <span className="hidden sm:inline">Medir</span>
+          </button>
+
+          {/* Alternar Grade (Cena limpa vs Tabuleiro quadriculado) */}
+          <button
+            onClick={() => void alternarGrade()}
+            title="Mostrar ou ocultar grade quadriculada"
+            className={`px-3 h-8 rounded-xl text-xs font-medium flex items-center gap-1.5 transition-colors ${
+              cenarioAtual.mostrarGrade
+                ? "bg-zinc-800 text-indigo-300 border border-indigo-500/30"
+                : "text-zinc-400 hover:text-white hover:bg-zinc-800"
+            }`}
+          >
+            <span className="font-mono font-bold text-sm leading-none">#</span>
+            <span className="hidden sm:inline">Grade</span>
+          </button>
+
+          {/* Cenas & Áudio (Mestre) */}
+          {isMestre && (
+            <>
+              <div className="w-px h-5 bg-white/10 mx-0.5" />
+              <button
+                onClick={() =>
+                  setPainelAberto(painelAberto === "cenas" ? null : "cenas")
+                }
+                title="Trocar mapa, imagem de fundo ou música"
+                className={`px-3 h-8 rounded-xl text-xs font-medium flex items-center gap-1.5 transition-colors ${
+                  painelAberto === "cenas"
+                    ? "bg-indigo-600 text-white shadow"
+                    : "text-zinc-300 hover:text-white hover:bg-zinc-800"
+                }`}
+              >
+                <span>🗺️</span>
+                <span className="hidden sm:inline">Cenas</span>
+                {audioAtivo && (
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                )}
+              </button>
+
+              <button
+                onClick={() => {
+                  const nova = ferramenta === "objetos" ? "mover" : "objetos";
+                  setFerramenta(nova);
+                  if (nova === "objetos") setPainelAberto(null);
+                }}
+                title="Colocar ou apagar objetos no cenário"
+                className={`px-3 h-8 rounded-xl text-xs font-medium flex items-center gap-1.5 transition-colors ${
+                  ferramenta === "objetos"
+                    ? "bg-indigo-600 text-white shadow"
+                    : "text-zinc-300 hover:text-white hover:bg-zinc-800"
+                }`}
+              >
+                <span>🧱</span>
+                <span className="hidden sm:inline">Objetos</span>
+              </button>
+            </>
+          )}
+        </div>
+
+        {/* Sub-barra compacta quando uma ferramenta contextual está ativa */}
+        {ferramenta === "posicionar" && fichaParaPosicionar && (
+          <div className="bg-indigo-600 text-white px-3.5 py-1.5 rounded-full text-xs font-medium shadow-xl flex items-center gap-2">
+            <span>
+              Clique em um quadrado para colocar{" "}
+              <strong>{fichaParaPosicionar.nome}</strong>
+            </span>
+            <button
+              onClick={() => {
+                setFerramenta("mover");
+                setFichaParaPosicionar(null);
+              }}
+              className="bg-black/25 hover:bg-black/40 px-2 py-0.5 rounded-full text-[11px]"
+            >
+              Cancelar
+            </button>
+          </div>
+        )}
+
+        {ferramenta === "alvo" && acaoSelecionada && (
+          <div className="bg-zinc-900/95 border border-indigo-500/40 text-zinc-100 px-3.5 py-1.5 rounded-full text-xs font-medium shadow-xl flex items-center gap-2">
+            <span>
+              {acaoSelecionada.icone} Escolha o alvo de{" "}
+              <strong>{acaoSelecionada.nome}</strong> (até{" "}
+              {acaoSelecionada.alcanceMetros}m)
+            </span>
+            <button
+              onClick={() => {
+                setFerramenta("mover");
+                setAcaoSelecionada(null);
+              }}
+              className="bg-zinc-800 hover:bg-zinc-700 px-2 py-0.5 rounded-full text-[11px]"
+            >
+              Cancelar
+            </button>
+          </div>
+        )}
+
+        {/* Paleta Flutuante Enxuta de Objetos de Cenário */}
+        {isMestre && ferramenta === "objetos" && (
+          <div className="bg-zinc-900/95 backdrop-blur-md border border-white/10 rounded-2xl p-1.5 shadow-2xl flex items-center gap-1 max-w-[92vw] overflow-x-auto custom-scrollbar">
+            {PROPS_CATALOGO.map((p) => {
+              const ativo = !modoBorrachaProp && propSelecionado?.tipo === p.tipo;
+              return (
+                <button
+                  key={p.tipo}
+                  onClick={() => {
+                    setPropSelecionado(p);
+                    setModoBorrachaProp(false);
+                  }}
+                  title={p.nome}
+                  className={`w-8 h-8 rounded-xl flex items-center justify-center text-base shrink-0 transition-colors ${
+                    ativo
+                      ? "bg-indigo-600 text-white"
+                      : "hover:bg-zinc-800 text-zinc-300"
                   }`}
                 >
-                  {log.horario && (
-                    <span className="text-[9px] text-zinc-500 mr-1.5">
-                      [{log.horario}]
+                  {p.icone}
+                </button>
+              );
+            })}
+            <div className="w-px h-5 bg-white/10 mx-0.5 shrink-0" />
+            <button
+              onClick={() => setModoBorrachaProp(!modoBorrachaProp)}
+              title="Borracha (clique nos objetos para apagar)"
+              className={`px-2.5 h-8 rounded-xl text-xs font-medium shrink-0 ${
+                modoBorrachaProp
+                  ? "bg-rose-600 text-white"
+                  : "hover:bg-zinc-800 text-zinc-400"
+              }`}
+            >
+              Apagar
+            </button>
+          </div>
+        )}
+
+        {/* Popover de Cenas & Áudio (Unifica Storytelling + Mapas sem poluir a tela!) */}
+        {isMestre && painelAberto === "cenas" && (
+          <div className="w-80 sm:w-96 bg-zinc-900/95 backdrop-blur-md border border-white/10 rounded-2xl p-4 shadow-2xl space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex gap-1 bg-zinc-950 p-1 rounded-xl border border-white/5">
+                <button
+                  onClick={() => setAbaCenas("mapas")}
+                  className={`px-3 py-1 rounded-lg text-xs font-semibold ${
+                    abaCenas === "mapas"
+                      ? "bg-indigo-600 text-white"
+                      : "text-zinc-400 hover:text-white"
+                  }`}
+                >
+                  Mapas & Cenas
+                </button>
+                <button
+                  onClick={() => setAbaCenas("audio")}
+                  className={`px-3 py-1 rounded-lg text-xs font-semibold ${
+                    abaCenas === "audio"
+                      ? "bg-indigo-600 text-white"
+                      : "text-zinc-400 hover:text-white"
+                  }`}
+                >
+                  Música
+                </button>
+              </div>
+
+              <label className="px-3 py-1.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-xs font-medium text-zinc-200 cursor-pointer transition-colors">
+                {uploadingMidia ? "Enviando..." : "+ Enviar Arquivo"}
+                <input
+                  type="file"
+                  className="hidden"
+                  accept="image/*,audio/*"
+                  disabled={uploadingMidia}
+                  onChange={async (e) => {
+                    const arq = e.target.files?.[0];
+                    if (!arq || !onUploadMidia) return;
+                    await onUploadMidia(arq);
+                    e.target.value = "";
+                  }}
+                />
+              </label>
+            </div>
+
+            {abaCenas === "mapas" ? (
+              <div className="space-y-3">
+                {/* Imagens enviadas pelo Mestre */}
+                {midias.filter((m) => m.tipo === 0).length > 0 && (
+                  <div className="space-y-1.5">
+                    <span className="text-[10px] font-semibold uppercase text-zinc-500">
+                      Suas Imagens Enviadas
+                    </span>
+                    <div className="grid grid-cols-2 gap-1.5 max-h-32 overflow-y-auto custom-scrollbar pr-1">
+                      {midias
+                        .filter((m) => m.tipo === 0)
+                        .map((m) => (
+                          <div
+                            key={m.id}
+                            className="group relative flex items-center gap-2 bg-zinc-950/80 hover:bg-zinc-800 border border-white/10 p-1.5 rounded-xl cursor-pointer"
+                            onClick={() =>
+                              void definirImagemDeFundo(
+                                m.caminhoServidor,
+                                m.nomeArquivo
+                              )
+                            }
+                          >
+                            <img
+                              src={m.caminhoServidor}
+                              alt={m.nomeArquivo}
+                              className="w-8 h-8 rounded-lg object-cover shrink-0"
+                            />
+                            <span className="text-[11px] text-zinc-200 truncate flex-1">
+                              {m.nomeArquivo}
+                            </span>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                void onExcluirMidia?.(m.id);
+                              }}
+                              className="opacity-0 group-hover:opacity-100 text-zinc-500 hover:text-rose-400 px-1 text-xs"
+                            >
+                              ✕
+                            </button>
+                          </div>
+                        ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Mapas Prontos & Salvos */}
+                <div className="space-y-1.5">
+                  <span className="text-[10px] font-semibold uppercase text-zinc-500">
+                    Mapas Prontos
+                  </span>
+                  <div className="space-y-1 max-h-36 overflow-y-auto custom-scrollbar pr-1">
+                    {[...CENARIOS_PADROES, ...cenariosSalvos].map((cen) => (
+                      <button
+                        key={cen.id}
+                        onClick={() => void aplicarCenario(cen)}
+                        className={`w-full text-left px-3 py-2 rounded-xl text-xs flex items-center justify-between transition-colors ${
+                          cenarioAtual.nome === cen.nome && !cenarioAtual.fundoUrl
+                            ? "bg-indigo-600/25 border border-indigo-500/40 text-indigo-200 font-semibold"
+                            : "bg-zinc-950/70 hover:bg-zinc-800 border border-white/5 text-zinc-300"
+                        }`}
+                      >
+                        <span className="truncate">{cen.nome}</span>
+                        <span className="text-[10px] text-zinc-500 capitalize">
+                          {cen.tema}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Salvar layout atual */}
+                <div className="flex gap-1.5 pt-2 border-t border-white/5">
+                  <input
+                    type="text"
+                    value={nomeNovoCenario}
+                    onChange={(e) => setNomeNovoCenario(e.target.value)}
+                    placeholder="Nome para salvar cena atual..."
+                    className="flex-1 bg-zinc-950 border border-white/10 rounded-xl px-2.5 py-1.5 text-xs text-white"
+                  />
+                  <button
+                    onClick={() => void salvarCenarioAtual()}
+                    className="px-3 py-1.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-xs font-semibold text-white"
+                  >
+                    Salvar
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {midias.filter((m) => m.tipo === 2).length === 0 ? (
+                  <p className="text-xs text-zinc-500 text-center py-4">
+                    Nenhuma música enviada. Clique em &quot;+ Enviar Arquivo&quot; para adicionar um áudio MP3.
+                  </p>
+                ) : (
+                  <div className="space-y-1.5 max-h-44 overflow-y-auto custom-scrollbar">
+                    {midias
+                      .filter((m) => m.tipo === 2)
+                      .map((m) => {
+                        const tocando = audioAtivo === m.caminhoServidor;
+                        return (
+                          <div
+                            key={m.id}
+                            className="flex items-center justify-between bg-zinc-950/80 border border-white/10 px-3 py-2 rounded-xl text-xs"
+                          >
+                            <button
+                              onClick={() => onTocarMusica?.(m.caminhoServidor)}
+                              className={`flex items-center gap-2 truncate flex-1 text-left font-medium ${
+                                tocando ? "text-emerald-400" : "text-zinc-300"
+                              }`}
+                            >
+                              <span>{tocando ? "⏸" : "▶"}</span>
+                              <span className="truncate">{m.nomeArquivo}</span>
+                            </button>
+                            <button
+                              onClick={() => void onExcluirMidia?.(m.id)}
+                              className="text-zinc-500 hover:text-rose-400 ml-2"
+                            >
+                              ✕
+                            </button>
+                          </div>
+                        );
+                      })}
+                  </div>
+                )}
+
+                {audioAtivo && (
+                  <div className="flex items-center gap-2 pt-2 border-t border-white/5">
+                    <span className="text-[11px] text-zinc-400">Volume</span>
+                    <input
+                      type="range"
+                      min="0"
+                      max="1"
+                      step="0.05"
+                      value={volume}
+                      onChange={(e) =>
+                        onAlterarVolume?.(parseFloat(e.target.value))
+                      }
+                      className="flex-1 h-1 bg-zinc-700 rounded-lg accent-indigo-500"
+                    />
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* =================================================================== */}
+      {/* 4. ILHA SUPERIOR DIREITA: ORDEM DE TURNOS (DISCRETA E OPCIONAL)     */}
+      {/* =================================================================== */}
+      <div className="fixed top-3 right-3 z-40 flex items-center gap-1.5">
+        {!combateIniciado ? (
+          isMestre && (
+            <button
+              onClick={() => void iniciarTurnos()}
+              title="Iniciar ordem de iniciativa por turnos"
+              className="bg-zinc-900/90 hover:bg-zinc-800 backdrop-blur-md border border-white/10 rounded-2xl px-3.5 h-11 text-xs font-medium text-zinc-300 hover:text-white shadow-2xl flex items-center gap-1.5 transition-colors"
+            >
+              <span>⚔️</span>
+              <span className="hidden sm:inline">Turnos</span>
+            </button>
+          )
+        ) : (
+          <div className="bg-zinc-900/90 backdrop-blur-md border border-white/10 rounded-2xl p-1.5 shadow-2xl flex items-center gap-1.5">
+            <span className="text-[11px] font-bold text-amber-400 px-2 hidden sm:inline">
+              R{rodada}
+            </span>
+
+            {/* Mini avatares de iniciativa */}
+            <div className="flex items-center gap-1 max-w-[140px] sm:max-w-[220px] overflow-x-auto custom-scrollbar">
+              {tokensVisiveis.map((t) => {
+                const ativo = tokenDoTurno?.id === t.id;
+                return (
+                  <button
+                    key={t.id}
+                    onClick={() => setTokenSelecionadoId(t.id)}
+                    title={`${t.nome} (Iniciativa ${t.iniciativa})`}
+                    className={`w-7 h-7 rounded-full flex items-center justify-center text-xs shrink-0 border transition-all ${
+                      ativo
+                        ? "bg-amber-500/25 border-amber-400 scale-105"
+                        : "bg-zinc-950 border-white/10 opacity-70 hover:opacity-100"
+                    }`}
+                  >
+                    {t.icone}
+                  </button>
+                );
+              })}
+            </div>
+
+            <button
+              onClick={() => void proximoTurno()}
+              title="Avançar para o próximo turno"
+              className="px-2.5 h-8 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold"
+            >
+              Próximo →
+            </button>
+
+            {isMestre && (
+              <div className="relative">
+                <button
+                  onClick={() =>
+                    setPainelAberto(
+                      painelAberto === "turnosMenu" ? null : "turnosMenu"
+                    )
+                  }
+                  className="w-8 h-8 rounded-xl hover:bg-zinc-800 text-zinc-400 hover:text-white text-sm"
+                >
+                  ⋯
+                </button>
+                {painelAberto === "turnosMenu" && (
+                  <div className="absolute right-0 top-10 w-44 bg-zinc-900 border border-white/10 rounded-2xl p-1.5 shadow-2xl space-y-1">
+                    <button
+                      onClick={() => void iniciarTurnos()}
+                      className="w-full text-left px-3 py-2 rounded-xl hover:bg-zinc-800 text-xs text-zinc-200"
+                    >
+                      🎲 Rerrolar Iniciativa
+                    </button>
+                    <button
+                      onClick={() => void realizarDescansoLongo()}
+                      className="w-full text-left px-3 py-2 rounded-xl hover:bg-zinc-800 text-xs text-zinc-200"
+                    >
+                      🌙 Descanso Longo
+                    </button>
+                    <button
+                      onClick={() => void encerrarTurnos()}
+                      className="w-full text-left px-3 py-2 rounded-xl hover:bg-rose-500/15 text-xs text-rose-300"
+                    >
+                      ✕ Encerrar Turnos
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* =================================================================== */}
+      {/* 5. CANTO INFERIOR ESQUERDO: BANDEJA DE DADOS + TOASTS EFÊMEROS      */}
+      {/* =================================================================== */}
+      <div className="fixed bottom-4 left-4 z-40 flex flex-col items-start gap-2">
+        {/* Toasts efêmeros limpos (somem sozinhos sem poluir a tela!) */}
+        {toastsVisiveis.length > 0 && (
+          <div className="space-y-1.5 pointer-events-none max-w-xs sm:max-w-sm">
+            {toastsVisiveis.map((t) => (
+              <div
+                key={t.id}
+                className={`px-3.5 py-2 rounded-2xl backdrop-blur-md border shadow-xl text-xs font-medium ${
+                  t.variante === "sucesso"
+                    ? "bg-emerald-950/90 border-emerald-500/40 text-emerald-100"
+                    : t.variante === "erro"
+                      ? "bg-rose-950/90 border-rose-500/40 text-rose-100"
+                      : "bg-zinc-900/95 border-white/10 text-zinc-100"
+                }`}
+              >
+                {t.texto}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Popover de Histórico (só aparece quando clicado) */}
+        {painelAberto === "historico" && (
+          <div className="w-72 sm:w-80 max-h-64 overflow-y-auto custom-scrollbar bg-zinc-900/95 backdrop-blur-md border border-white/10 rounded-2xl p-3 shadow-2xl space-y-1.5">
+            <div className="flex items-center justify-between pb-1.5 border-b border-white/5">
+              <span className="text-[11px] font-semibold text-zinc-400">
+                Histórico Recente
+              </span>
+              <button
+                onClick={() => setPainelAberto(null)}
+                className="text-zinc-500 hover:text-white text-xs"
+              >
+                ✕
+              </button>
+            </div>
+            {historicoRecente.length === 0 ? (
+              <p className="text-xs text-zinc-500 py-3 text-center">
+                Nenhuma rolagem ainda.
+              </p>
+            ) : (
+              historicoRecente.map((item) => (
+                <div
+                  key={item.id}
+                  className="text-[11px] text-zinc-300 bg-zinc-950/60 px-2.5 py-1.5 rounded-xl border border-white/5"
+                >
+                  {item.horario && (
+                    <span className="text-[10px] text-zinc-500 mr-1.5 font-mono">
+                      {item.horario}
                     </span>
                   )}
-                  <span>{log.texto}</span>
+                  <span>{item.texto}</span>
                 </div>
+              ))
+            )}
+          </div>
+        )}
+
+        {/* Bandeja de Dados Estilo Owlbear Rodeo */}
+        {painelAberto === "dados" && (
+          <div className="w-72 sm:w-80 bg-zinc-900/95 backdrop-blur-md border border-white/10 rounded-2xl p-3.5 shadow-2xl space-y-3">
+            <div className="grid grid-cols-7 gap-1">
+              {[4, 6, 8, 10, 12, 20, 100].map((faces) => (
+                <button
+                  key={faces}
+                  onClick={() => void rolarDadoBandeja(faces)}
+                  className="py-2 rounded-xl bg-zinc-950 hover:bg-indigo-600 text-zinc-200 hover:text-white border border-white/10 text-xs font-bold font-mono transition-colors"
+                >
+                  d{faces}
+                </button>
               ))}
             </div>
-          </div>
-        </aside>
 
-        {/* BARRA DE NAVEGAÇÃO INFERIOR EXCLUSIVA PARA MOBILE */}
-        <nav className="grid lg:hidden grid-cols-5 bg-zinc-900 border-t border-zinc-800 h-12 shrink-0 z-40">
+            <div className="grid grid-cols-3 gap-1 bg-zinc-950 p-1 rounded-xl border border-white/5">
+              {[
+                { id: "desvantagem", label: "Desv." },
+                { id: "normal", label: "Normal" },
+                { id: "vantagem", label: "Vant." },
+              ].map((m) => (
+                <button
+                  key={m.id}
+                  onClick={() => setModoRolagemD20(m.id)}
+                  className={`py-1 rounded-lg text-[11px] font-semibold transition-colors ${
+                    modoRolagemD20 === m.id
+                      ? "bg-indigo-600 text-white"
+                      : "text-zinc-400 hover:text-white"
+                  }`}
+                >
+                  {m.label}
+                </button>
+              ))}
+            </div>
+
+            {fichasMesa.length > 0 && (
+              <div className="space-y-2 pt-1 border-t border-white/5">
+                <select
+                  value={fichaRolagemId}
+                  onChange={(e) => setFichaRolagemId(e.target.value)}
+                  className="w-full bg-zinc-950 border border-white/10 rounded-xl px-2.5 py-1.5 text-xs text-zinc-200"
+                >
+                  {fichasMesa.map((f) => (
+                    <option key={f.id} value={f.id}>
+                      {f.nome}
+                    </option>
+                  ))}
+                </select>
+                <div className="grid grid-cols-2 gap-1">
+                  {PERICIAS_RAPIDAS.map((per) => (
+                    <button
+                      key={per.key}
+                      onClick={() => void rolarPericiaRapida(per)}
+                      className="px-2.5 py-1.5 rounded-lg bg-zinc-950/80 hover:bg-zinc-800 text-[11px] text-zinc-300 text-left truncate transition-colors"
+                    >
+                      {per.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        <div className="flex items-center gap-1.5">
           <button
-            onClick={() => selecionarAbaMobile("mapa")}
-            className={`flex flex-col items-center justify-center text-[10px] font-bold ${
-              !gavetaMobileAberta ? "text-red-400 bg-zinc-950" : "text-zinc-400"
+            onClick={() =>
+              setPainelAberto(painelAberto === "dados" ? null : "dados")
+            }
+            title="Abrir Bandeja de Dados"
+            className={`h-11 px-3.5 rounded-2xl backdrop-blur-md border shadow-2xl flex items-center gap-1.5 text-xs font-semibold transition-colors ${
+              painelAberto === "dados"
+                ? "bg-indigo-600 border-indigo-400 text-white"
+                : "bg-zinc-900/90 hover:bg-zinc-800 border-white/10 text-zinc-200"
             }`}
           >
-            <span>🗺️</span>
-            <span>Mapa</span>
+            <span className="text-base">🎲</span>
+            <span className="hidden sm:inline">Dados</span>
           </button>
-          <button
-            onClick={() => selecionarAbaMobile("combate")}
-            className={`flex flex-col items-center justify-center text-[10px] font-bold ${
-              gavetaMobileAberta && abaLateral === "combate"
-                ? "text-red-400 bg-zinc-950"
-                : "text-zinc-400"
-            }`}
-          >
-            <span>⚔️</span>
-            <span>Ações</span>
-          </button>
-          <button
-            onClick={() => selecionarAbaMobile("spawn")}
-            className={`flex flex-col items-center justify-center text-[10px] font-bold ${
-              gavetaMobileAberta && abaLateral === "spawn"
-                ? "text-emerald-400 bg-zinc-950"
-                : "text-zinc-400"
-            }`}
-          >
-            <span>🧙‍♂️</span>
-            <span>Spawn</span>
-          </button>
-          <button
-            onClick={() => selecionarAbaMobile("cenario")}
-            className={`flex flex-col items-center justify-center text-[10px] font-bold ${
-              gavetaMobileAberta && abaLateral === "cenario"
-                ? "text-amber-400 bg-zinc-950"
-                : "text-zinc-400"
-            }`}
-          >
-            <span>🧱</span>
-            <span>Cenário</span>
-          </button>
-          <button
-            onClick={() => selecionarAbaMobile("logs")}
-            className={`flex flex-col items-center justify-center text-[10px] font-bold ${
-              gavetaMobileAberta && abaLateral === "logs"
-                ? "text-purple-400 bg-zinc-950"
-                : "text-zinc-400"
-            }`}
-          >
-            <span>🎲</span>
-            <span>Log</span>
-          </button>
-        </nav>
+
+          {historicoRecente.length > 0 && (
+            <button
+              onClick={() =>
+                setPainelAberto(
+                  painelAberto === "historico" ? null : "historico"
+                )
+              }
+              title="Ver histórico de rolagens"
+              className={`w-11 h-11 rounded-2xl backdrop-blur-md border shadow-2xl flex items-center justify-center text-xs transition-colors ${
+                painelAberto === "historico"
+                  ? "bg-indigo-600 border-indigo-400 text-white"
+                  : "bg-zinc-900/90 hover:bg-zinc-800 border-white/10 text-zinc-400 hover:text-white"
+              }`}
+            >
+              📜
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* =================================================================== */}
+      {/* 6. CENTRO INFERIOR: MENU CONTEXTUAL DO TOKEN + DOCK DE PERSONAGENS  */}
+      {/* =================================================================== */}
+      <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-40 flex flex-col items-center gap-2 max-w-[92vw]">
+        {/* Sub-menus do Token Selecionado (Ações da Ficha ou Condições) */}
+        {tokenSelecionado && subMenuToken === "acoes" && (
+          <div className="w-72 sm:w-80 bg-zinc-900/95 backdrop-blur-md border border-white/10 rounded-2xl p-2.5 shadow-2xl space-y-1.5 max-h-60 overflow-y-auto custom-scrollbar">
+            <div className="flex items-center justify-between px-1 pb-1 border-b border-white/5">
+              <span className="text-[11px] font-semibold text-zinc-400">
+                Ações de {tokenSelecionado.nome}
+              </span>
+              <button
+                onClick={() => setSubMenuToken(null)}
+                className="text-zinc-500 hover:text-white text-xs"
+              >
+                ✕
+              </button>
+            </div>
+            {acoesDisponiveis.map((acao) => (
+              <button
+                key={acao.id}
+                onClick={() => {
+                  setAcaoSelecionada(acao);
+                  setFerramenta("alvo");
+                  setSubMenuToken(null);
+                }}
+                className="w-full text-left px-3 py-2 rounded-xl bg-zinc-950/80 hover:bg-indigo-600/20 border border-white/5 hover:border-indigo-500/40 flex items-center justify-between gap-2 transition-colors"
+              >
+                <div className="min-w-0">
+                  <span className="text-xs font-semibold text-white block truncate">
+                    {acao.icone} {acao.nome}
+                  </span>
+                  <span className="text-[10px] text-zinc-500">
+                    Alcance {acao.alcanceMetros}m
+                  </span>
+                </div>
+                <span
+                  className={`text-xs font-mono font-bold shrink-0 ${
+                    acao.tipo === "cura" ? "text-emerald-400" : "text-indigo-300"
+                  }`}
+                >
+                  {acao.tipo === "cura" ? `+${acao.dano}` : acao.dano}
+                </span>
+              </button>
+            ))}
+          </div>
+        )}
+
+        {tokenSelecionado && subMenuToken === "status" && (
+          <div className="bg-zinc-900/95 backdrop-blur-md border border-white/10 rounded-2xl p-2 shadow-2xl flex flex-wrap items-center gap-1">
+            {CONDICOES_DND.map((c) => {
+              const ativa = (tokenSelecionado.condicoes || []).includes(c.id);
+              return (
+                <button
+                  key={c.id}
+                  onClick={() => void alternarCondicaoToken(c.id)}
+                  className={`px-2.5 py-1.5 rounded-xl text-xs font-medium transition-colors ${
+                    ativa
+                      ? "bg-indigo-600 text-white"
+                      : "bg-zinc-950 text-zinc-400 hover:text-white"
+                  }`}
+                >
+                  {c.icone} {c.nome}
+                </button>
+              );
+            })}
+          </div>
+        )}
+
+        {/* BARRA CONTEXTUAL DO TOKEN SELECIONADO (ESTILO OWLBEAR RODEO!) */}
+        {tokenSelecionado && (
+          <div className="bg-zinc-900/95 backdrop-blur-md border border-white/10 rounded-2xl px-2.5 py-1.5 shadow-2xl flex flex-wrap items-center justify-center gap-1.5">
+            <div className="flex items-center gap-1.5 pr-1">
+              <span className="text-base">{tokenSelecionado.icone}</span>
+              <span className="text-xs font-bold text-white max-w-[90px] sm:max-w-[130px] truncate">
+                {tokenSelecionado.nome}
+              </span>
+              <span className="text-[10px] font-mono bg-zinc-800 text-zinc-300 px-1.5 py-0.5 rounded-md">
+                CA {tokenSelecionado.ca}
+              </span>
+            </div>
+
+            {/* Controle rápido de PV inline (-1 / PV / +1) */}
+            {podeControlarToken(tokenSelecionado) ? (
+              <div className="flex items-center bg-zinc-950 border border-white/10 rounded-xl p-0.5">
+                <button
+                  onClick={() => void ajustarHpRapido(-5)}
+                  title="Causar 5 de dano"
+                  className="px-1.5 py-1 text-[10px] font-bold text-rose-400 hover:bg-rose-500/15 rounded-lg"
+                >
+                  -5
+                </button>
+                <button
+                  onClick={() => void ajustarHpRapido(-1)}
+                  title="Causar 1 de dano"
+                  className="px-2 py-1 text-xs font-bold text-rose-300 hover:bg-rose-500/15 rounded-lg"
+                >
+                  −
+                </button>
+                <span className="px-2 text-xs font-mono font-bold text-emerald-400">
+                  {tokenSelecionado.hpAtual}/{tokenSelecionado.hpMax}
+                </span>
+                <button
+                  onClick={() => void ajustarHpRapido(1)}
+                  title="Curar 1 PV"
+                  className="px-2 py-1 text-xs font-bold text-emerald-300 hover:bg-emerald-500/15 rounded-lg"
+                >
+                  +
+                </button>
+                <button
+                  onClick={() => void ajustarHpRapido(5)}
+                  title="Curar 5 PV"
+                  className="px-1.5 py-1 text-[10px] font-bold text-emerald-400 hover:bg-emerald-500/15 rounded-lg"
+                >
+                  +5
+                </button>
+              </div>
+            ) : (
+              <span className="text-xs font-mono text-emerald-400 px-2">
+                {tokenSelecionado.hpAtual}/{tokenSelecionado.hpMax} PV
+              </span>
+            )}
+
+            {/* Botões rápidos de ação, status, ficha, ocultar e remover */}
+            {podeControlarToken(tokenSelecionado) && (
+              <>
+                <button
+                  onClick={() =>
+                    setSubMenuToken(subMenuToken === "acoes" ? null : "acoes")
+                  }
+                  className={`px-2.5 py-1.5 rounded-xl text-xs font-semibold transition-colors ${
+                    subMenuToken === "acoes"
+                      ? "bg-indigo-600 text-white"
+                      : "bg-zinc-800 hover:bg-zinc-700 text-zinc-200"
+                  }`}
+                >
+                  ⚔️ Ações
+                </button>
+                <button
+                  onClick={() =>
+                    setSubMenuToken(subMenuToken === "status" ? null : "status")
+                  }
+                  title="Condições de status"
+                  className={`px-2 py-1.5 rounded-xl text-xs transition-colors ${
+                    subMenuToken === "status"
+                      ? "bg-indigo-600 text-white"
+                      : "hover:bg-zinc-800 text-zinc-300"
+                  }`}
+                >
+                  ✨
+                </button>
+              </>
+            )}
+
+            <button
+              onClick={() => {
+                setFichaModalDados({
+                  id:
+                    typeof tokenSelecionado.fichaId === "number"
+                      ? tokenSelecionado.fichaId
+                      : null,
+                  objeto: tokenSelecionado.ficha,
+                });
+                setFichaModalAberta(true);
+              }}
+              title="Abrir Ficha"
+              className="px-2 py-1.5 rounded-xl hover:bg-zinc-800 text-zinc-300 text-xs"
+            >
+              📄
+            </button>
+
+            {isMestre && (
+              <>
+                <button
+                  onClick={() => void alternarVisibilidadeToken()}
+                  title={
+                    tokenSelecionado.oculto
+                      ? "Revelar aos jogadores"
+                      : "Ocultar dos jogadores"
+                  }
+                  className={`px-2 py-1.5 rounded-xl text-xs ${
+                    tokenSelecionado.oculto
+                      ? "bg-indigo-600/30 text-indigo-200"
+                      : "hover:bg-zinc-800 text-zinc-400"
+                  }`}
+                >
+                  👁️
+                </button>
+                <button
+                  onClick={() => void removerToken(tokenSelecionado.id)}
+                  title="Remover do mapa"
+                  className="px-2 py-1.5 rounded-xl hover:bg-rose-500/20 text-zinc-400 hover:text-rose-300 text-xs"
+                >
+                  🗑️
+                </button>
+              </>
+            )}
+          </div>
+        )}
+
+        {/* DOCK DE PERSONAGENS / TOKENS (BANDEJA HORIZONTAL RETRÁTIL OWLBEAR) */}
+        {painelAberto === "dock" && (
+          <div className="bg-zinc-900/95 backdrop-blur-md border border-white/10 rounded-2xl p-3 shadow-2xl w-[88vw] max-w-xl space-y-2.5">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-xs font-semibold text-zinc-300">
+                Arraste ou clique em um personagem para colocar no mapa
+              </span>
+              <div className="flex items-center gap-2 shrink-0">
+                {isMestre && (
+                  <label className="flex items-center gap-1 text-[11px] text-zinc-400 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={spawnOculto}
+                      onChange={(e) => setSpawnOculto(e.target.checked)}
+                      className="accent-indigo-500"
+                    />
+                    Oculto
+                  </label>
+                )}
+                <button
+                  onClick={() => setPainelAberto(null)}
+                  className="text-zinc-500 hover:text-white text-xs px-1"
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+
+            {fichasMesa.length === 0 ? (
+              <div className="flex flex-wrap items-center justify-between gap-2 bg-zinc-950/70 border border-white/5 rounded-xl p-3">
+                <span className="text-xs text-zinc-400">
+                  Nenhum personagem na sala ainda.
+                </span>
+                <div className="flex gap-2">
+                  {isMestre && (
+                    <button
+                      onClick={() => void gerarFichasPadroesNaMesa()}
+                      disabled={carregandoFichas}
+                      className="px-3 py-1.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-xs font-medium text-zinc-200"
+                    >
+                      {carregandoFichas ? "Carregando..." : "Carregar Exemplos"}
+                    </button>
+                  )}
+                  <button
+                    onClick={() => navigate("/criar-ficha")}
+                    className="px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-xs font-semibold text-white"
+                  >
+                    + Criar Ficha
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 overflow-x-auto custom-scrollbar pb-1">
+                {fichasMesa
+                  .filter(
+                    (f) =>
+                      isMestre ||
+                      Number(f.usuarioId) === Number(usuarioLogado?.id)
+                  )
+                  .map((f) => {
+                    const faccao = detectarFaccaoFicha(f);
+                    const icone = obterIconeFicha(f, faccao);
+                    const selecionado = fichaParaPosicionar?.id === f.id;
+                    return (
+                      <button
+                        key={f.id}
+                        draggable
+                        onDragStart={() =>
+                          setArrastandoItem({ tipo: "ficha", ficha: f })
+                        }
+                        onDragEnd={() => setArrastandoItem(null)}
+                        onClick={() => {
+                          setFichaParaPosicionar(f);
+                          setFerramenta("posicionar");
+                          setPainelAberto(null);
+                        }}
+                        className={`flex flex-col items-center gap-1 p-2 rounded-xl border shrink-0 w-20 transition-all cursor-grab active:cursor-grabbing ${
+                          selecionado
+                            ? "bg-indigo-600/25 border-indigo-400"
+                            : "bg-zinc-950/80 hover:bg-zinc-800 border-white/10"
+                        }`}
+                      >
+                        <div
+                          className={`w-10 h-10 rounded-full flex items-center justify-center text-lg bg-zinc-900 border-2 ${
+                            faccao === "inimigo"
+                              ? "border-rose-500"
+                              : "border-emerald-400"
+                          }`}
+                        >
+                          {icone}
+                        </div>
+                        <span className="text-[10px] font-medium text-zinc-200 w-full truncate text-center">
+                          {f.nome}
+                        </span>
+                      </button>
+                    );
+                  })}
+
+                {isMestre && fichasMesa.length < 4 && (
+                  <button
+                    onClick={() => void gerarFichasPadroesNaMesa()}
+                    disabled={carregandoFichas}
+                    className="flex flex-col items-center justify-center gap-1 p-2 rounded-xl border border-dashed border-white/15 hover:border-indigo-400 shrink-0 w-20 h-[76px] text-[10px] text-zinc-400 hover:text-white"
+                  >
+                    <span className="text-base">⚡</span>
+                    <span>Exemplos</span>
+                  </button>
+                )}
+
+                <button
+                  onClick={() => navigate("/criar-ficha")}
+                  className="flex flex-col items-center justify-center gap-1 p-2 rounded-xl border border-dashed border-white/15 hover:border-indigo-400 shrink-0 w-20 h-[76px] text-[10px] text-zinc-400 hover:text-white"
+                >
+                  <span className="text-base">+</span>
+                  <span>Nova Ficha</span>
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Botão Gatilho da Bandeja de Personagens */}
+        <button
+          onClick={() =>
+            setPainelAberto(painelAberto === "dock" ? null : "dock")
+          }
+          className={`h-11 px-4 rounded-2xl backdrop-blur-md border shadow-2xl flex items-center gap-2 text-xs font-semibold transition-colors ${
+            painelAberto === "dock"
+              ? "bg-indigo-600 border-indigo-400 text-white"
+              : "bg-zinc-900/90 hover:bg-zinc-800 border-white/10 text-zinc-200"
+          }`}
+        >
+          <span>🎭</span>
+          <span>Personagens</span>
+        </button>
+      </div>
+
+      {/* =================================================================== */}
+      {/* 7. CANTO INFERIOR DIREITO: CONTROLE DE ZOOM DISCRETO                */}
+      {/* =================================================================== */}
+      <div className="fixed bottom-4 right-3 sm:right-4 z-40 flex items-center bg-zinc-900/90 backdrop-blur-md border border-white/10 rounded-2xl p-1 shadow-2xl">
+        <button
+          onClick={() => setTamanhoCelula((prev) => Math.max(28, prev - 6))}
+          title="Diminuir zoom"
+          className="w-7 sm:w-8 h-9 rounded-xl hover:bg-zinc-800 text-zinc-400 hover:text-white font-bold text-sm"
+        >
+          −
+        </button>
+        <button
+          onClick={() => setTamanhoCelula(CELL_BASE)}
+          title="Restaurar zoom 100%"
+          className="px-2 text-[11px] font-mono text-zinc-400 hover:text-white hidden sm:inline"
+        >
+          {zoomPercent}%
+        </button>
+        <button
+          onClick={() => setTamanhoCelula((prev) => Math.min(84, prev + 6))}
+          title="Aumentar zoom"
+          className="w-7 sm:w-8 h-9 rounded-xl hover:bg-zinc-800 text-zinc-400 hover:text-white font-bold text-sm"
+        >
+          +
+        </button>
       </div>
     </div>
   );

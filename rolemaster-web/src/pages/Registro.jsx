@@ -16,20 +16,16 @@ export function Registro() {
     setLoading(true);
 
     try {
-      // Endpoint alinhado com o [HttpPost("registrar")]
       await api.post("/auth/registrar", {
         nome,
         email,
         senha,
       });
-
-      alert("Aventureiro registrado com sucesso! Faça seu login.");
       navigate("/login");
     } catch (error) {
-      // Lendo o campo "message" retornado pelo BadRequest do seu C#
       setErro(
         error.response?.data?.message ||
-          "Erro ao forjar sua conta. Tente novamente.",
+          "Não foi possível criar sua conta. Tente novamente."
       );
     } finally {
       setLoading(false);
@@ -37,55 +33,64 @@ export function Registro() {
   };
 
   return (
-    <div className="min-h-screen bg-zinc-950 flex flex-col justify-center items-center p-4">
-      <div className="max-w-md w-full bg-zinc-900 border border-zinc-800 rounded-xl p-8 shadow-2xl">
-        <div className="text-center mb-8">
-          <h1 className="text-4xl font-bold text-red-600 tracking-wider uppercase mb-2">
-            RoleMaster
+    <div className="min-h-screen owlbear-canvas-bg flex flex-col justify-center items-center p-4">
+      <div className="max-w-sm w-full bg-zinc-900/95 backdrop-blur-md border border-white/10 rounded-2xl p-7 shadow-2xl">
+        <div className="text-center mb-7">
+          <div className="w-11 h-11 rounded-2xl bg-indigo-600/20 border border-indigo-500/30 text-indigo-400 flex items-center justify-center mx-auto mb-3 text-xl font-bold">
+            🎲
+          </div>
+          <h1 className="text-2xl font-bold text-white tracking-tight">
+            Criar Conta
           </h1>
-          <p className="text-zinc-400">Junte-se à guilda.</p>
+          <p className="text-zinc-400 text-sm mt-1">
+            Comece a jogar ou mestrar em segundos
+          </p>
         </div>
 
         {erro && (
-          <div className="bg-red-900/30 border border-red-900 text-red-400 p-3 rounded mb-6 text-sm text-center font-medium">
+          <div className="bg-red-500/10 border border-red-500/30 text-red-300 p-3 rounded-xl mb-4 text-xs text-center">
             {erro}
           </div>
         )}
 
         <form onSubmit={handleRegistro} className="space-y-4">
           <div>
-            <label className="block text-zinc-400 text-sm mb-1">
-              Como devemos chamá-lo?
+            <label className="block text-zinc-400 text-xs font-medium mb-1.5">
+              Nome de exibição
             </label>
             <input
               type="text"
               value={nome}
               onChange={(e) => setNome(e.target.value)}
-              className="w-full bg-zinc-950 border border-zinc-800 text-zinc-100 p-3 rounded focus:outline-none focus:border-red-700 transition-colors"
-              placeholder="Seu Nome"
+              className="w-full bg-zinc-950/80 border border-white/10 text-zinc-100 px-3.5 py-2.5 rounded-xl text-sm placeholder-zinc-600 focus:outline-none focus:border-indigo-500 transition-colors"
+              placeholder="Como seus amigos te chamam"
               required
             />
           </div>
 
           <div>
-            <label className="block text-zinc-400 text-sm mb-1">E-mail</label>
+            <label className="block text-zinc-400 text-xs font-medium mb-1.5">
+              E-mail
+            </label>
             <input
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="w-full bg-zinc-950 border border-zinc-800 text-zinc-100 p-3 rounded focus:outline-none focus:border-red-700 transition-colors"
-              placeholder="email@guilda.com"
+              className="w-full bg-zinc-950/80 border border-white/10 text-zinc-100 px-3.5 py-2.5 rounded-xl text-sm placeholder-zinc-600 focus:outline-none focus:border-indigo-500 transition-colors"
+              placeholder="voce@exemplo.com"
               required
             />
           </div>
 
           <div>
-            <label className="block text-zinc-400 text-sm mb-1">Senha</label>
+            <label className="block text-zinc-400 text-xs font-medium mb-1.5">
+              Senha
+            </label>
             <input
               type="password"
               value={senha}
               onChange={(e) => setSenha(e.target.value)}
-              className="w-full bg-zinc-950 border border-zinc-800 text-zinc-100 p-3 rounded focus:outline-none focus:border-red-700 transition-colors"
+              className="w-full bg-zinc-950/80 border border-white/10 text-zinc-100 px-3.5 py-2.5 rounded-xl text-sm placeholder-zinc-600 focus:outline-none focus:border-indigo-500 transition-colors"
               placeholder="••••••••"
               required
             />
@@ -94,19 +99,19 @@ export function Registro() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full bg-red-700 hover:bg-red-600 disabled:bg-red-900 text-white font-bold py-3 rounded-lg transition-colors mt-6 shadow-lg shadow-red-900/20"
+            className="w-full bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 text-white font-semibold py-2.5 rounded-xl text-sm transition-colors mt-2 shadow-lg shadow-indigo-950/40"
           >
-            {loading ? "Forjando conta..." : "Criar Conta"}
+            {loading ? "Criando..." : "Criar conta"}
           </button>
         </form>
 
-        <p className="text-center text-zinc-400 mt-6 text-sm">
-          Já faz parte da guilda?{" "}
+        <p className="text-center text-zinc-400 mt-5 text-xs">
+          Já possui conta?{" "}
           <Link
             to="/login"
-            className="text-red-500 hover:text-red-400 font-semibold transition-colors"
+            className="text-indigo-400 hover:text-indigo-300 font-semibold transition-colors"
           >
-            Faça login
+            Entrar
           </Link>
         </p>
       </div>
