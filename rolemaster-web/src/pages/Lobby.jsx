@@ -277,7 +277,15 @@ export function Lobby() {
             </span>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 sm:gap-3">
+            <button
+              onClick={() => navigate("/criar-ficha?sistema=ano1")}
+              className="px-3 py-1.5 rounded-xl bg-red-900/30 hover:bg-red-800/40 border border-red-500/40 text-xs font-semibold text-red-200 transition-colors flex items-center gap-1.5"
+              title="Criar ficha Ano Um (1950) com Foto 3x4 e PDF Zumbi"
+            >
+              <span>🧟</span>
+              <span>Ficha Ano 1 (1950)</span>
+            </button>
             <span className="text-xs text-zinc-400 hidden sm:inline">
               Olá, <strong className="text-zinc-200">{nomeUsuario}</strong>
             </span>

@@ -1,10 +1,15 @@
 import { useEffect, useState } from "react";
 import { api } from "../services/api";
 import { formatarModificador } from "../data/dndPresets";
+import {
+  gerarPdfFichaAnoUm,
+  calcularFichaAnoUm,
+} from "../data/anoUmPresets";
 
 export function FichaModal({ isOpen, onClose, fichaId, fichaObjeto }) {
   const [fichaRemota, setFichaRemota] = useState(null);
   const [idCarregado, setIdCarregado] = useState(null);
+  const [gerandoPdf, setGerandoPdf] = useState(false);
 
   const precisaBuscar = Boolean(isOpen && fichaId && Number(fichaId) > 0);
 
@@ -35,6 +40,37 @@ export function FichaModal({ isOpen, onClose, fichaId, fichaObjeto }) {
       : fichaObjeto || null;
   const loading = precisaBuscar && idCarregado !== fichaId && !fichaObjeto;
 
+  let dadosAnoUm = null;
+  if (ficha?.outrasProficienciasEIdiomas) {
+    try {
+      const parsed = JSON.parse(ficha.outrasProficienciasEIdiomas);
+      if (parsed && parsed.sistema === "ano1") {
+        dadosAnoUm = {
+          ...parsed,
+          retratoBase64:
+            parsed.retratoBase64 ||
+            (ficha.aparenciaDoPersonagem?.startsWith("data:image/")
+              ? ficha.aparenciaDoPersonagem
+              : ""),
+        };
+      }
+    } catch {
+      dadosAnoUm = null;
+    }
+  }
+
+  const calcAnoUm = dadosAnoUm ? calcularFichaAnoUm(dadosAnoUm) : null;
+
+  const handleBaixarPdfAnoUm = async () => {
+    if (!dadosAnoUm || !calcAnoUm || gerandoPdf) return;
+    setGerandoPdf(true);
+    try {
+      await gerarPdfFichaAnoUm(dadosAnoUm, calcAnoUm);
+    } finally {
+      setGerandoPdf(false);
+    }
+  };
+
   if (!isOpen) return null;
 
   return (
@@ -63,13 +99,81 @@ export function FichaModal({ isOpen, onClose, fichaId, fichaObjeto }) {
           </p>
         ) : (
           <div className="space-y-5">
-            <div className="pr-8">
-              <h2 className="text-xl font-bold text-white">{ficha.nome}</h2>
-              <p className="text-zinc-400 text-xs mt-0.5">
-                {ficha.raca || "Aventureiro"} • {ficha.classe || "Guerreiro"} (Nível{" "}
-                {ficha.nivel || 1})
-              </p>
+            <div className="flex items-start gap-3 pr-8">
+              {(dadosAnoUm?.retratoBase64 ||
+                ficha.aparenciaDoPersonagem?.startsWith("data:image/")) && (
+                <img
+                  src={dadosAnoUm?.retratoBase64 || ficha.aparenciaDoPersonagem}
+                  alt={ficha.nome}
+                  className="w-16 h-20 object-cover rounded-xl border border-red-500/40 shrink-0"
+                />
+              )}
+              <div className="min-w-0 flex-1">
+                <h2 className="text-xl font-bold text-white truncate">
+                  {ficha.nome}
+                </h2>
+                <p className="text-zinc-400 text-xs mt-0.5">
+                  {ficha.raca || "Aventureiro"} • {ficha.classe || "Guerreiro"} (Nível{" "}
+                  {ficha.nivel || 1})
+                </p>
+                {dadosAnoUm && (
+                  <button
+                    type="button"
+                    onClick={() => void handleBaixarPdfAnoUm()}
+                    disabled={gerandoPdf}
+                    className="mt-2 px-3 py-1.5 rounded-xl bg-red-800 hover:bg-red-700 text-white text-[11px] font-bold transition-colors inline-flex items-center gap-1.5"
+                  >
+                    <span>🧟</span>
+                    <span>
+                      {gerandoPdf ? "Gerando PDF..." : "Baixar PDF Zumbi (Ano 1)"}
+                    </span>
+                  </button>
+                )}
+              </div>
             </div>
+
+            {dadosAnoUm && calcAnoUm && (
+              <div className="bg-red-950/20 border border-red-500/30 rounded-xl p-3 space-y-2">
+                <div className="flex items-center justify-between text-[11px] text-red-200 font-bold">
+                  <span>🧟 DOSSIÊ ANO UM (1950)</span>
+                  <span>
+                    Moral {dadosAnoUm.moralAtual ?? 3}/6 • Consciência{" "}
+                    {dadosAnoUm.conscienciaAtual ?? 1}/12
+                  </span>
+                </div>
+                <div className="grid grid-cols-3 gap-2 text-center text-xs">
+                  <div className="bg-zinc-950/80 rounded-lg py-1.5 border border-white/5">
+                    <span className="block text-[9px] text-zinc-400">FÍSICO (FIS)</span>
+                    <strong className="text-red-300">
+                      {calcAnoUm.atributosFinais.fisico} ({calcAnoUm.conversao.fisico.bonusTexto})
+                    </strong>
+                  </div>
+                  <div className="bg-zinc-950/80 rounded-lg py-1.5 border border-white/5">
+                    <span className="block text-[9px] text-zinc-400">INTELIGÊNCIA</span>
+                    <strong className="text-sky-300">
+                      {calcAnoUm.atributosFinais.inteligencia} ({calcAnoUm.conversao.inteligencia.bonusTexto})
+                    </strong>
+                  </div>
+                  <div className="bg-zinc-950/80 rounded-lg py-1.5 border border-white/5">
+                    <span className="block text-[9px] text-zinc-400">SOCIAL (SOC)</span>
+                    <strong className="text-amber-300">
+                      {calcAnoUm.atributosFinais.social} ({calcAnoUm.conversao.social.bonusTexto})
+                    </strong>
+                  </div>
+                </div>
+                <div className="grid grid-cols-3 gap-1.5 text-[10px]">
+                  {calcAnoUm.pvPartes.map((m) => (
+                    <div
+                      key={m.id}
+                      className="bg-zinc-950/70 rounded px-2 py-1 border border-white/5 flex justify-between"
+                    >
+                      <span className="text-zinc-400 truncate">{m.nome}:</span>
+                      <strong className="text-emerald-300">{m.pvMax} PV</strong>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             <div className="grid grid-cols-4 gap-2.5 text-center">
               <div className="bg-zinc-950/80 border border-white/5 p-2.5 rounded-xl">

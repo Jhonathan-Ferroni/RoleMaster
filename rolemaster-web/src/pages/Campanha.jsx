@@ -287,7 +287,7 @@ export function Campanha() {
               </p>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               {mesa.isMestre && (
                 <button
                   onClick={() => void carregarExemplosProntos()}
@@ -298,10 +298,17 @@ export function Campanha() {
                 </button>
               )}
               <button
+                onClick={() => navigate("/criar-ficha?sistema=ano1")}
+                className="px-4 py-2 rounded-xl bg-red-900/40 hover:bg-red-800/50 border border-red-500/40 text-red-200 text-xs font-semibold transition-colors flex items-center gap-1.5"
+              >
+                <span>🧟</span>
+                <span>+ Ficha Ano 1 (1950)</span>
+              </button>
+              <button
                 onClick={() => navigate("/criar-ficha")}
                 className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold transition-colors"
               >
-                + Novo Personagem
+                + Novo Personagem (D&D)
               </button>
             </div>
           </div>

@@ -1,6 +1,8 @@
 import { useState, useEffect } from "react";
 import { useNavigate, useParams, useLocation } from "react-router-dom";
 import { api } from "../services/api";
+import { CriadorFichaAnoUm } from "../components/CriadorFichaAnoUm";
+import { ESTADO_INICIAL_ANO_UM } from "../data/anoUmPresets";
 
 const MODELOS_RAPIDOS = [
   {
@@ -218,6 +220,12 @@ export function CriarFicha() {
   const isEdit = location.pathname.endsWith("/editar");
   const isReadOnly = Boolean(id && !isEdit);
 
+  const queryParams = new URLSearchParams(location.search);
+  const [sistemaFicha, setSistemaFicha] = useState(() =>
+    queryParams.get("sistema") === "ano1" ? "ano1" : "dnd5e"
+  );
+  const [dadosAnoUmCarregados, setDadosAnoUmCarregados] = useState(null);
+
   const [abaAtiva, setAbaAtiva] = useState("essencial"); // 'essencial' | 'combate' | 'detalhes'
   const [carregando, setCarregando] = useState(Boolean(id));
   const [enviando, setEnviando] = useState(false);
@@ -307,7 +315,7 @@ export function CriarFicha() {
   });
 
   useEffect(() => {
-    if (!tenantId && !id) {
+    if (!tenantId && !id && sistemaFicha !== "ano1") {
       navigate("/lobby");
       return;
     }
@@ -326,6 +334,32 @@ export function CriarFicha() {
           dadosTratados.equipamento = [];
         if (!Array.isArray(dadosTratados.magia)) dadosTratados.magia = [];
         setFicha(dadosTratados);
+
+        // Detecta automaticamente se a ficha salva pertence ao sistema Ano Um (1950)
+        try {
+          if (
+            dadosTratados.outrasProficienciasEIdiomas &&
+            String(dadosTratados.outrasProficienciasEIdiomas).startsWith("{")
+          ) {
+            const parsedAno1 = JSON.parse(
+              dadosTratados.outrasProficienciasEIdiomas
+            );
+            if (parsedAno1?.sistema === "ano1") {
+              setDadosAnoUmCarregados({
+                ...ESTADO_INICIAL_ANO_UM,
+                ...parsedAno1,
+                nome: dadosTratados.nome || parsedAno1.nome,
+                retratoBase64:
+                  dadosTratados.aparenciaDoPersonagem ||
+                  parsedAno1.retratoBase64 ||
+                  "",
+              });
+              setSistemaFicha("ano1");
+            }
+          }
+        } catch {
+          // Ficha D&D padrão
+        }
       })
       .catch(() => {
         if (ativo) navigate(-1);
@@ -337,7 +371,7 @@ export function CriarFicha() {
     return () => {
       ativo = false;
     };
-  }, [id, tenantId, navigate]);
+  }, [id, tenantId, navigate, sistemaFicha]);
 
   const getMod = (valor) => Math.floor((Number(valor || 10) - 10) / 2);
   const exibeMod = (valor) => {
@@ -494,6 +528,91 @@ export function CriarFicha() {
     { key: "carisma", label: "Carisma", sigla: "CAR" },
   ];
 
+  const handleSalvarFichaAnoUm = async (dadosAno1, calcAno1) => {
+    if (isReadOnly) return;
+    if (!tenantId && !ficha.mesaId) {
+      // Se não estiver dentro de uma sala ativa, salva localmente no navegador
+      localStorage.setItem(
+        "rolemaster_ultima_ficha_ano1",
+        JSON.stringify(dadosAno1)
+      );
+      return;
+    }
+
+    setEnviando(true);
+    const pvTorso =
+      calcAno1.partesCorpoCalculadas.find((p) => p.id === "torso")?.pvMax ||
+      35 + calcAno1.atributosFinais.fisico;
+
+    const payload = {
+      ...ficha,
+      mesaId: ficha.mesaId || tenantId,
+      nome: (dadosAno1.nome || "Sobrevivente de 1950").trim(),
+      raca: "Ano Um (1950)",
+      classe: `${calcAno1.profissaoObj.nome.split(" (")[0]} • ${
+        calcAno1.origemObj?.nome?.split(" (")[0] ||
+        calcAno1.subclasse1Obj?.nome?.split(" (")[0] ||
+        "Sobrevivente"
+      }`,
+      nivel: 1,
+      alinhamento: `Certo: ${dadosAno1.alinhamentoCerto || "-"} | Repudia: ${dadosAno1.alinhamentoRepudia || "-"}`.slice(
+        0,
+        180
+      ),
+      antecedente: `Gancho #${dadosAno1.ganchoId} (1950)`,
+      nomeDoJogador: dadosAno1.nomeJogador || "",
+      forca: calcAno1.atributosFinais.fisico,
+      strMod: calcAno1.conversao.fisico.bonus ?? 0,
+      destreza: calcAno1.atributosFinais.fisico,
+      dexMod: calcAno1.conversao.fisico.bonus ?? 0,
+      constituicao: calcAno1.atributosFinais.fisico,
+      conMod: calcAno1.conversao.fisico.bonus ?? 0,
+      inteligencia: calcAno1.atributosFinais.inteligencia,
+      intMod: calcAno1.conversao.inteligencia.bonus ?? 0,
+      sabedoria: calcAno1.atributosFinais.inteligencia,
+      wisMod: calcAno1.conversao.inteligencia.bonus ?? 0,
+      carisma: calcAno1.atributosFinais.social,
+      chaMod: calcAno1.conversao.social.bonus ?? 0,
+      classeArmadura: 10 + (calcAno1.conversao.fisico.bonus ?? 0),
+      iniciativa: calcAno1.conversao.fisico.bonus ?? 0,
+      deslocamento: 9,
+      pontosDeVidaMaximos: pvTorso,
+      pontosDeVidaAtuais: pvTorso,
+      dadoDeVida: "2d6",
+      idade: parseInt(dadosAno1.idade, 10) || 28,
+      aparenciaDoPersonagem: dadosAno1.retratoBase64 || "",
+      historiaDoPersonagem: dadosAno1.ganchoResposta || "",
+      outrasProficienciasEIdiomas: JSON.stringify({
+        ...dadosAno1,
+        sistema: "ano1",
+      }),
+      equipamento: [
+        {
+          name: dadosAno1.kitUtensilioProfissao || "Utensílio de Profissão",
+          damage: "1d6",
+          properties: "Corpo a Corpo (1.5m)",
+        },
+        {
+          name: dadosAno1.kitObjetoSentimental || "Objeto Sentimental",
+          damage: "1d4",
+          properties: "Âncora de Moral (1950)",
+        },
+      ],
+      magia: [],
+    };
+
+    try {
+      if (isEdit && id) {
+        await api.put(`/characters/${id}`, payload);
+      } else {
+        await api.post("/characters", payload);
+      }
+      navigate(-1);
+    } catch {
+      setEnviando(false);
+    }
+  };
+
   if (carregando) {
     return (
       <div className="min-h-screen owlbear-canvas-bg text-zinc-400 flex items-center justify-center text-sm">
@@ -504,9 +623,11 @@ export function CriarFicha() {
 
   return (
     <div className="min-h-screen owlbear-canvas-bg text-zinc-100 p-3 sm:p-6">
-      <div className="max-w-3xl mx-auto">
-        {/* Topo de navegação */}
-        <div className="flex items-center justify-between mb-4">
+      <div
+        className={`${sistemaFicha === "ano1" ? "max-w-5xl" : "max-w-3xl"} mx-auto`}
+      >
+        {/* Topo de navegação + Seletor de Sistema (D&D 5e vs Ano Um 1950) */}
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
           <button
             type="button"
             onClick={() => navigate(-1)}
@@ -514,6 +635,34 @@ export function CriarFicha() {
           >
             ← Voltar
           </button>
+
+          {!id && (
+            <div className="flex items-center gap-1.5 bg-zinc-900/90 border border-white/10 p-1 rounded-2xl">
+              <button
+                type="button"
+                onClick={() => setSistemaFicha("dnd5e")}
+                className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all ${
+                  sistemaFicha === "dnd5e"
+                    ? "bg-indigo-600 text-white shadow"
+                    : "text-zinc-400 hover:text-white"
+                }`}
+              >
+                🐉 Ficha D&D 5e
+              </button>
+              <button
+                type="button"
+                onClick={() => setSistemaFicha("ano1")}
+                className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all flex items-center gap-1.5 ${
+                  sistemaFicha === "ano1"
+                    ? "bg-red-700 text-white shadow"
+                    : "text-zinc-400 hover:text-white"
+                }`}
+              >
+                <span>🧟</span>
+                <span>Ficha Ano 1 (1950 • PDF Zumbi)</span>
+              </button>
+            </div>
+          )}
 
           {isReadOnly && id && (
             <button
@@ -526,10 +675,21 @@ export function CriarFicha() {
           )}
         </div>
 
-        <form
-          onSubmit={handleSubmit}
-          className="bg-zinc-900/90 backdrop-blur-md border border-white/10 rounded-2xl shadow-2xl overflow-hidden"
-        >
+        {sistemaFicha === "ano1" ? (
+          <CriadorFichaAnoUm
+            dadosIniciais={dadosAnoUmCarregados}
+            isReadOnly={isReadOnly}
+            enviando={enviando}
+            temSalaAtiva={Boolean(tenantId || ficha.mesaId)}
+            onSalvarNaSala={
+              tenantId || ficha.mesaId ? handleSalvarFichaAnoUm : null
+            }
+          />
+        ) : (
+          <form
+            onSubmit={handleSubmit}
+            className="bg-zinc-900/90 backdrop-blur-md border border-white/10 rounded-2xl shadow-2xl overflow-hidden"
+          >
           {/* Modelos rápidos (apenas ao criar nova ficha) */}
           {!id && !isReadOnly && (
             <div className="px-5 py-4 bg-zinc-950/60 border-b border-white/5">
@@ -1027,6 +1187,7 @@ export function CriarFicha() {
             </div>
           )}
         </form>
+        )}
       </div>
     </div>
   );
