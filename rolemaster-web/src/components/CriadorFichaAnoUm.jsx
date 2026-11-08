@@ -16,13 +16,13 @@ import {
 } from "../data/anoUmPresets";
 
 const ETAPAS_WIZARD = [
-  { id: "contexto", curto: "0. 1950 & Foto", titulo: "Contexto de 1950, Foto & Gancho" },
-  { id: "passo1", curto: "1. Atributos", titulo: "Passo 1 — Atributos Base (1 + 6 pts)" },
-  { id: "passo2", curto: "2. Perícias", titulo: "Passo 2 — Perícias (10 pts livres)" },
-  { id: "passo3", curto: "3. Profissão", titulo: "Passo 3 — Profissão de 1950" },
-  { id: "passo4", curto: "4. Origem/Sub", titulo: "Passo 4 — Origem e Subclasse" },
-  { id: "passo5", curto: "5. Moral & Traços", titulo: "Passo 5 — Moral, Qualidades e Defeitos" },
-  { id: "passo6", curto: "6. PV, Kit & PDF 🧟", titulo: "Passo 6 — Vida por Membro, Kit & PDF Zumbi" },
+  { id: "contexto", curto: "1. 1950 & Foto", titulo: "1. Identidade, Foto 3×4 & Gancho (1950)" },
+  { id: "passo3", curto: "2. Profissão", titulo: "2. Profissão ou Ex-Profissão de 1950" },
+  { id: "passo4", curto: "3. Origem/Sub", titulo: "3. Origem e Subclasses" },
+  { id: "passo5", curto: "4. Moral & Traços", titulo: "4. Moral, Âncoras, Qualidades e Defeitos" },
+  { id: "passo1", curto: "5. Atributos (+6)", titulo: "5. Distribuição Final de Atributos (+6 pts)" },
+  { id: "passo2", curto: "6. Perícias (+10)", titulo: "6. Distribuição de Perícias" },
+  { id: "passo6", curto: "7. PV, Kit & PDF 🧟", titulo: "7. Vida por Membro, Kit & PDF Zumbi" },
 ];
 
 function redimensionarImagemParaBase64(arquivo) {
@@ -128,9 +128,99 @@ export function CriadorFichaAnoUm({
     setDados((prev) => ({
       ...prev,
       profissaoId: prof.id,
-      kitRoupa1950: prev.kitRoupa1950 || prof.sugestaoRoupa,
-      kitUtensilioProfissao: prof.sugestaoUtensilio,
     }));
+  };
+
+  const selecionarModoEstilo = (novoModo) => {
+    if (isReadOnly) return;
+    setDados((prev) => {
+      if (novoModo === "polivalente") {
+        return {
+          ...prev,
+          modoEstilo: "polivalente",
+          origemId: "polivalente",
+        };
+      }
+      if (novoModo === "duas_subclasses") {
+        const s1 = prev.subclasse1Id || "furtivo";
+        const s2 =
+          prev.subclasse2Id && prev.subclasse2Id !== s1
+            ? prev.subclasse2Id
+            : s1 === "galeno"
+              ? "fabricante"
+              : "galeno";
+        return {
+          ...prev,
+          modoEstilo: "duas_subclasses",
+          origemId:
+            prev.origemId === "polivalente" ? "imparavel" : prev.origemId,
+          subclasse1Id: s1,
+          subclasse2Id: s2,
+        };
+      }
+      return {
+        ...prev,
+        modoEstilo: "origem_subclasse",
+        origemId: prev.origemId === "polivalente" ? "imparavel" : prev.origemId,
+        subclasse1Id: prev.subclasse1Id || "furtivo",
+      };
+    });
+  };
+
+  const clicarCardSubclasse = (subId) => {
+    if (isReadOnly) return;
+    setDados((prev) => {
+      if (prev.modoEstilo !== "duas_subclasses") {
+        return { ...prev, subclasse1Id: subId };
+      }
+
+      const s1 = prev.subclasse1Id;
+      const s2 = prev.subclasse2Id;
+
+      // Se clicou em uma subclasse já marcada, desmarca ela para abrir vaga
+      if (s1 === subId) {
+        return {
+          ...prev,
+          subclasse1Id: s2 || "",
+          subclasse2Id: "",
+        };
+      }
+      if (s2 === subId) {
+        return {
+          ...prev,
+          subclasse2Id: "",
+        };
+      }
+
+      // Se houver vaga na 1ª ou 2ª subclasse, preenche a vaga livre
+      if (!s1) {
+        return { ...prev, subclasse1Id: subId };
+      }
+      if (!s2) {
+        return { ...prev, subclasse2Id: subId };
+      }
+
+      // Se já tinha 2 marcadas e clicou em uma 3ª diferente, substitui a 2ª
+      return { ...prev, subclasse2Id: subId };
+    });
+  };
+
+  const definirSlotSubclasse = (slotNum, subId) => {
+    if (isReadOnly) return;
+    setDados((prev) => {
+      if (slotNum === 1) {
+        return {
+          ...prev,
+          subclasse1Id: subId,
+          subclasse2Id: prev.subclasse2Id === subId ? prev.subclasse1Id : prev.subclasse2Id,
+        };
+      }
+      return {
+        ...prev,
+        subclasse2Id: subId,
+        subclasse1Id: prev.subclasse1Id === subId ? prev.subclasse2Id : prev.subclasse1Id,
+      };
+    });
   };
 
   const alternarQualidade = (qualId) => {
@@ -501,18 +591,21 @@ export function CriadorFichaAnoUm({
       )}
 
       {/* =================================================================== */}
-      {/* PASSO 1 — ATRIBUTOS BASE (1 INICIAL + 6 PONTOS LIVRES)              */}
+      {/* ETAPA 5 — ATRIBUTOS BASE (DEIXADOS PARA O FINAL COM EXTRATO CLARO)  */}
       {/* =================================================================== */}
       {etapaAtiva === "passo1" && (
         <div className="space-y-5">
           <div className="bg-zinc-900/70 border border-white/10 rounded-2xl p-5 space-y-4">
             <div className="flex items-center justify-between flex-wrap gap-2">
               <div>
+                <span className="text-[11px] font-mono uppercase text-red-400">
+                  Etapa 5 • Consolidação Final de Atributos (Pág. 8)
+                </span>
                 <h3 className="text-base font-bold text-white">
-                  Passo 1 — Atributos Base (1 Inicial em cada + 6 Pontos Livres)
+                  Distribuição Final dos 6 Pontos Livres de Atributo Base
                 </h3>
                 <p className="text-xs text-zinc-400">
-                  Todo personagem começa com 1 ponto em Físico, Inteligência e Social e recebe +6 pontos livres (além dos bônus dos Passos 3, 4 e 5).
+                  Todos os bônus de <strong>Profissão</strong>, <strong>Origem/Subclasses</strong> e <strong>Qualidades/Defeitos</strong> já estão detalhados abaixo. Agora basta distribuir os seus <strong>6 pontos livres</strong> finais!
                 </p>
               </div>
               <div
@@ -531,7 +624,7 @@ export function CriadorFichaAnoUm({
                 const info = ATRIBUTOS_INFO[chave];
                 const dist = Number(dados.pontosAtributoDist?.[chave] ?? 0);
                 const finalVal = calc.atributosFinais[chave];
-                const bonusPassos = finalVal - (1 + dist);
+                const det = calc.detalhamentoAtributos;
                 const conv = calc.conversao[chave];
 
                 return (
@@ -551,15 +644,104 @@ export function CriadorFichaAnoUm({
                       <p className="text-[11px] text-zinc-400 mt-1.5 leading-relaxed">
                         {info.descricao}
                       </p>
+
+                      {/* Extrato transparente de cada fonte de ponto */}
+                      <div className="mt-3 bg-zinc-900/70 border border-white/5 rounded-xl p-2.5 space-y-1 text-[11px] font-mono">
+                        <div className="flex justify-between text-zinc-400">
+                          <span>Base Inicial:</span>
+                          <span className="text-zinc-200">+1</span>
+                        </div>
+                        <div className="flex justify-between text-zinc-400">
+                          <span>Profissão (Etapa 2):</span>
+                          <span
+                            className={
+                              det.profissao[chave] > 0
+                                ? "text-emerald-300 font-bold"
+                                : "text-zinc-500"
+                            }
+                          >
+                            +{det.profissao[chave]}
+                          </span>
+                        </div>
+                        {calc.modoEstilo !== "duas_subclasses" && (
+                          <div className="flex justify-between text-zinc-400">
+                            <span>Origem ({calc.origemObj?.nome?.split(" (")[0] || "—"}):</span>
+                            <span
+                              className={
+                                det.origem[chave] > 0
+                                  ? "text-amber-300 font-bold"
+                                  : "text-zinc-500"
+                              }
+                            >
+                              +{det.origem[chave]}
+                            </span>
+                          </div>
+                        )}
+                        {calc.modoEstilo !== "polivalente" && (
+                          <div className="flex justify-between text-zinc-400">
+                            <span>
+                              {calc.modoEstilo === "duas_subclasses"
+                                ? `1ª Sub (${calc.subclasse1Obj?.nome?.split(" (")[0] || "—"}):`
+                                : `Subclasse (${calc.subclasse1Obj?.nome?.split(" (")[0] || "—"}):`}
+                            </span>
+                            <span
+                              className={
+                                det.subclasse1[chave] > 0
+                                  ? "text-sky-300 font-bold"
+                                  : "text-zinc-500"
+                              }
+                            >
+                              +{det.subclasse1[chave]}
+                            </span>
+                          </div>
+                        )}
+                        {calc.modoEstilo === "duas_subclasses" && (
+                          <div className="flex justify-between text-zinc-400">
+                            <span>
+                              2ª Sub ({calc.subclasse2Obj?.nome?.split(" (")[0] || "—"}):
+                            </span>
+                            <span
+                              className={
+                                det.subclasse2[chave] > 0
+                                  ? "text-sky-300 font-bold"
+                                  : "text-zinc-500"
+                              }
+                            >
+                              +{det.subclasse2[chave]}
+                            </span>
+                          </div>
+                        )}
+                        <div className="flex justify-between text-zinc-400">
+                          <span>Qualidades / Defeitos:</span>
+                          <span
+                            className={
+                              det.qualidadesDefeitos[chave] > 0
+                                ? "text-lime-300 font-bold"
+                                : det.qualidadesDefeitos[chave] < 0
+                                  ? "text-rose-400 font-bold"
+                                  : "text-zinc-500"
+                            }
+                          >
+                            {det.qualidadesDefeitos[chave] >= 0
+                              ? `+${det.qualidadesDefeitos[chave]}`
+                              : det.qualidadesDefeitos[chave]}
+                          </span>
+                        </div>
+                        <div className="flex justify-between border-t border-white/10 pt-1 text-zinc-200 font-bold">
+                          <span>Subtotal Fixo:</span>
+                          <span>{det.baseAntesLivres[chave]}</span>
+                        </div>
+                        <div className="flex justify-between text-red-300 font-bold">
+                          <span>+ Seus Pontos Livres:</span>
+                          <span>+{dist}</span>
+                        </div>
+                      </div>
                     </div>
 
-                    <div className="bg-zinc-900/90 border border-white/5 rounded-xl p-3 flex items-center justify-between">
+                    <div className="bg-zinc-900/90 border border-white/10 rounded-xl p-3 flex items-center justify-between">
                       <div>
-                        <span className="text-[10px] text-zinc-400 block">
-                          1 (Inicial) + {dist} (Livres){" "}
-                          {bonusPassos !== 0
-                            ? `${bonusPassos > 0 ? `+ ${bonusPassos}` : `- ${Math.abs(bonusPassos)}`} (Passos 3–5)`
-                            : ""}
+                        <span className="text-[10px] text-zinc-400 block uppercase font-mono">
+                          Atributo Final ({det.baseAntesLivres[chave]} + {dist})
                         </span>
                         <span className="text-2xl font-bold text-white font-mono">
                           Total: {finalVal}
@@ -902,17 +1084,51 @@ export function CriadorFichaAnoUm({
       )}
 
       {/* =================================================================== */}
-      {/* PASSO 4 — ORIGENS E SUBCLASSES DO LIVRO (PÁGS. 32 A 50)             */}
+      {/* ETAPA 3 — ORIGENS E SUBCLASSES DO LIVRO (PÁGS. 32 A 50)             */}
       {/* =================================================================== */}
       {etapaAtiva === "passo4" && (
         <div className="space-y-5">
           <div className="bg-zinc-900/70 border border-white/10 rounded-2xl p-5 space-y-4">
-            <h3 className="text-base font-bold text-white">
-              Passo 4 — Origens e Subclasses do Livro (Págs. 32 a 50)
-            </h3>
-            <p className="text-xs text-zinc-400">
-              No sistema Ano Um, você define o estilo do seu sobrevivente escolhendo <strong>1 Origem + 1 Subclasse</strong> (ou apenas a Origem <em>Polivalente</em>, ou <strong>2 Subclasses</strong> se não quiser nenhuma Origem):
-            </p>
+            <div className="flex items-start justify-between flex-wrap gap-3">
+              <div>
+                <span className="text-[11px] font-mono uppercase text-red-400">
+                  Etapa 3 • Estilo do Sobrevivente (Págs. 32 a 50)
+                </span>
+                <h3 className="text-base font-bold text-white">
+                  Origens e Subclasses do Livro
+                </h3>
+                <p className="text-xs text-zinc-400">
+                  Escolha <strong>1 Origem + 1 Subclasse</strong>, apenas a Origem <em>Polivalente</em>, ou <strong>2 Subclasses</strong> (sem Origem).
+                </p>
+              </div>
+
+              {/* Painel ao vivo confirmando os pontos somados nos atributos */}
+              <div className="bg-zinc-950/95 border border-emerald-500/35 rounded-xl px-3.5 py-2.5 text-xs space-y-1">
+                <span className="text-[10px] font-mono uppercase text-emerald-300 font-bold block">
+                  ✓ Pontos Adicionados aos Atributos nesta Etapa:
+                </span>
+                <div className="flex items-center gap-3 font-mono font-bold">
+                  <span className="text-red-300">
+                    FIS: +
+                    {calc.detalhamentoAtributos.origem.fisico +
+                      calc.detalhamentoAtributos.subclasse1.fisico +
+                      calc.detalhamentoAtributos.subclasse2.fisico}
+                  </span>
+                  <span className="text-sky-300">
+                    INT: +
+                    {calc.detalhamentoAtributos.origem.inteligencia +
+                      calc.detalhamentoAtributos.subclasse1.inteligencia +
+                      calc.detalhamentoAtributos.subclasse2.inteligencia}
+                  </span>
+                  <span className="text-amber-300">
+                    SOC: +
+                    {calc.detalhamentoAtributos.origem.social +
+                      calc.detalhamentoAtributos.subclasse1.social +
+                      calc.detalhamentoAtributos.subclasse2.social}
+                  </span>
+                </div>
+              </div>
+            </div>
 
             {/* Seletor de combinação */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
@@ -930,27 +1146,17 @@ export function CriadorFichaAnoUm({
                 {
                   id: "duas_subclasses",
                   rotulo: "2 Subclasses (Sem Origem)",
-                  desc: "Combina 2 especializações da Tabela B",
+                  desc: "Combina 2 especializações diferentes da Tabela B",
                 },
               ].map((m) => (
                 <button
                   key={m.id}
                   type="button"
                   disabled={isReadOnly}
-                  onClick={() => {
-                    atualizarCampo("modoEstilo", m.id);
-                    if (m.id === "polivalente") {
-                      atualizarCampo("origemId", "polivalente");
-                    } else if (
-                      m.id === "origem_subclasse" &&
-                      dados.origemId === "polivalente"
-                    ) {
-                      atualizarCampo("origemId", "imparavel");
-                    }
-                  }}
+                  onClick={() => selecionarModoEstilo(m.id)}
                   className={`p-3 rounded-xl border text-left transition-all ${
                     calc.modoEstilo === m.id
-                      ? "bg-red-950/40 border-red-500 text-white"
+                      ? "bg-red-950/40 border-red-500 text-white shadow"
                       : "bg-zinc-950/70 border-white/10 text-zinc-300 hover:bg-zinc-900"
                   }`}
                 >
@@ -974,11 +1180,17 @@ export function CriadorFichaAnoUm({
                         key={orig.id}
                         onClick={() => {
                           if (isReadOnly) return;
-                          atualizarCampo("origemId", orig.id);
                           if (orig.id === "polivalente") {
-                            atualizarCampo("modoEstilo", "polivalente");
-                          } else if (calc.modoEstilo === "polivalente") {
-                            atualizarCampo("modoEstilo", "origem_subclasse");
+                            selecionarModoEstilo("polivalente");
+                          } else {
+                            setDados((prev) => ({
+                              ...prev,
+                              origemId: orig.id,
+                              modoEstilo:
+                                prev.modoEstilo === "polivalente"
+                                  ? "origem_subclasse"
+                                  : prev.modoEstilo,
+                            }));
                           }
                         }}
                         className={`p-3.5 rounded-xl border cursor-pointer transition-all space-y-2 ${
@@ -1005,30 +1217,49 @@ export function CriadorFichaAnoUm({
                           {orig.habilidadeTexto}
                         </p>
 
+                        {ativa &&
+                          (!orig.atributosOpcoes ||
+                            orig.atributosOpcoes.length === 0) && (
+                            <div className="pt-1.5 border-t border-white/10 flex items-center justify-between text-[11px]">
+                              <span className="text-emerald-300 font-semibold font-mono">
+                                ✓ Bônus somado automaticamente: {orig.bonusResumo}
+                              </span>
+                            </div>
+                          )}
+
                         {ativa && orig.atributosOpcoes?.length > 0 && (
                           <div
                             onClick={(e) => e.stopPropagation()}
                             className="pt-2 border-t border-white/10 flex items-center gap-2 flex-wrap"
                           >
-                            <span className="text-[11px] text-zinc-300">
-                              Escolher Bônus (+1):
+                            <span className="text-[11px] text-emerald-300 font-semibold">
+                              Escolha qual atributo ganha +1:
                             </span>
-                            {orig.atributosOpcoes.map((attr) => (
-                              <button
-                                key={attr}
-                                type="button"
-                                onClick={() =>
-                                  atualizarCampo("origemAtributoEscolha", attr)
-                                }
-                                className={`px-2.5 py-1 rounded-lg text-[11px] font-bold uppercase ${
-                                  dados.origemAtributoEscolha === attr
-                                    ? "bg-red-600 text-white"
-                                    : "bg-zinc-800 text-zinc-400"
-                                }`}
-                              >
-                                +1 {ATRIBUTOS_INFO[attr].sigla}
-                              </button>
-                            ))}
+                            {orig.atributosOpcoes.map((attr) => {
+                              const escolhido =
+                                (orig.atributosOpcoes.includes(
+                                  dados.origemAtributoEscolha
+                                )
+                                  ? dados.origemAtributoEscolha
+                                  : orig.atributosOpcoes[0]) === attr;
+                              return (
+                                <button
+                                  key={attr}
+                                  type="button"
+                                  onClick={() =>
+                                    atualizarCampo("origemAtributoEscolha", attr)
+                                  }
+                                  className={`px-2.5 py-1 rounded-lg text-[11px] font-bold uppercase ${
+                                    escolhido
+                                      ? "bg-emerald-600 text-white shadow"
+                                      : "bg-zinc-800 text-zinc-400 hover:text-white"
+                                  }`}
+                                >
+                                  {escolhido ? "✓ " : ""}+1{" "}
+                                  {ATRIBUTOS_INFO[attr].sigla}
+                                </button>
+                              );
+                            })}
                           </div>
                         )}
 
@@ -1044,7 +1275,7 @@ export function CriadorFichaAnoUm({
                                 atualizarCampo("origemDetalhe", e.target.value)
                               }
                               placeholder={orig.requerDetalhe}
-                              className="w-full bg-zinc-900 border border-white/15 rounded-lg px-2.5 py-1.5 text-xs text-white"
+                              className="w-full bg-zinc-900 border border-white/15 rounded-lg px-2.5 py-1.5 text-xs text-white placeholder:text-zinc-500/75"
                             />
                           </div>
                         )}
@@ -1058,13 +1289,26 @@ export function CriadorFichaAnoUm({
             {/* Tabela B — Subclasses Essenciais */}
             {calc.modoEstilo !== "polivalente" && (
               <div className="space-y-3 pt-3 border-t border-white/10">
-                <h4 className="text-xs font-bold uppercase text-sky-300">
-                  Tabela B — Subclasses Essenciais (
-                  {calc.modoEstilo === "duas_subclasses"
-                    ? "Escolha a 1ª e a 2ª Subclasse"
-                    : "Escolha 1 Subclasse"}
-                  )
-                </h4>
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <h4 className="text-xs font-bold uppercase text-sky-300">
+                    Tabela B — Subclasses Essenciais (
+                    {calc.modoEstilo === "duas_subclasses"
+                      ? "Clique em 2 Subclasses diferentes para marcar a 1ª e a 2ª"
+                      : "Escolha 1 Subclasse"}
+                    )
+                  </h4>
+
+                  {calc.modoEstilo === "duas_subclasses" && (
+                    <div className="flex items-center gap-2 text-[11px] font-mono">
+                      <span className="px-2.5 py-1 rounded-lg bg-sky-500/20 border border-sky-500/40 text-sky-200">
+                        1ª: <strong>{calc.subclasse1Obj?.nome?.split(" (")[0] || "Nenhuma"}</strong>
+                      </span>
+                      <span className="px-2.5 py-1 rounded-lg bg-indigo-500/20 border border-indigo-500/40 text-indigo-200">
+                        2ª: <strong>{calc.subclasse2Obj?.nome?.split(" (")[0] || "Nenhuma"}</strong>
+                      </span>
+                    </div>
+                  )}
+                </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   {SUBCLASSES_LIVRO.map((sub) => {
@@ -1077,47 +1321,68 @@ export function CriadorFichaAnoUm({
                     return (
                       <div
                         key={sub.id}
-                        onClick={() => {
-                          if (isReadOnly) return;
-                          if (calc.modoEstilo === "duas_subclasses") {
-                            if (dados.subclasse1Id === sub.id) return;
-                            atualizarCampo("subclasse2Id", sub.id);
-                          } else {
-                            atualizarCampo("subclasse1Id", sub.id);
-                          }
-                        }}
+                        onClick={() => clicarCardSubclasse(sub.id)}
                         className={`p-3.5 rounded-xl border cursor-pointer transition-all space-y-2 ${
-                          ativa
-                            ? "bg-sky-950/35 border-sky-500 text-white shadow"
-                            : "bg-zinc-950/70 hover:bg-zinc-900 border-white/10 text-zinc-300"
+                          isSub1
+                            ? "bg-sky-950/40 border-sky-400 text-white shadow"
+                            : isSub2
+                              ? "bg-indigo-950/40 border-indigo-400 text-white shadow"
+                              : "bg-zinc-950/70 hover:bg-zinc-900 border-white/10 text-zinc-300"
                         }`}
                       >
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="text-xs font-bold text-white">
-                            {sub.nome}
-                          </span>
-                          <div className="flex items-center gap-1.5">
-                            <span className="text-[11px] font-mono text-sky-300 font-semibold">
-                              {sub.bonusResumo}
+                        <div className="flex items-center justify-between gap-2 flex-wrap">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-bold text-white">
+                              {sub.nome}
                             </span>
-                            {calc.modoEstilo === "duas_subclasses" && (
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  atualizarCampo("subclasse1Id", sub.id);
-                                }}
-                                className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                                  isSub1
-                                    ? "bg-sky-600 text-white"
-                                    : "bg-zinc-800 text-zinc-400"
-                                }`}
-                              >
-                                1ª
-                              </button>
+                            {isSub1 && (
+                              <span className="text-[10px] px-2 py-0.5 rounded-full bg-sky-600 text-white font-bold">
+                                {calc.modoEstilo === "duas_subclasses"
+                                  ? "1ª Subclasse"
+                                  : "Selecionada"}
+                              </span>
+                            )}
+                            {isSub2 && (
+                              <span className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-600 text-white font-bold">
+                                2ª Subclasse
+                              </span>
                             )}
                           </div>
+
+                          <span className="text-[11px] font-mono text-sky-300 font-semibold">
+                            {sub.bonusResumo}
+                          </span>
                         </div>
+
+                        {calc.modoEstilo === "duas_subclasses" && !isReadOnly && (
+                          <div
+                            onClick={(e) => e.stopPropagation()}
+                            className="flex items-center gap-1.5 pt-0.5"
+                          >
+                            <button
+                              type="button"
+                              onClick={() => definirSlotSubclasse(1, sub.id)}
+                              className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition-colors ${
+                                isSub1
+                                  ? "bg-sky-600 text-white"
+                                  : "bg-zinc-800 hover:bg-zinc-700 text-zinc-300"
+                              }`}
+                            >
+                              {isSub1 ? "✓ Definida como 1ª" : "Marcar como 1ª"}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => definirSlotSubclasse(2, sub.id)}
+                              className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition-colors ${
+                                isSub2
+                                  ? "bg-indigo-600 text-white"
+                                  : "bg-zinc-800 hover:bg-zinc-700 text-zinc-300"
+                              }`}
+                            >
+                              {isSub2 ? "✓ Definida como 2ª" : "Marcar como 2ª"}
+                            </button>
+                          </div>
+                        )}
 
                         <p className="text-[11px] text-zinc-400">
                           <strong>Pré-requisito:</strong> {sub.requisitoTexto}
@@ -1129,30 +1394,45 @@ export function CriadorFichaAnoUm({
                           {sub.habilidadeTexto}
                         </p>
 
+                        {ativa &&
+                          (!sub.atributosOpcoes ||
+                            sub.atributosOpcoes.length === 0) && (
+                            <div className="pt-1.5 border-t border-white/10 text-[11px] text-emerald-300 font-mono font-semibold">
+                              ✓ Bônus somado automaticamente: {sub.bonusResumo}
+                            </div>
+                          )}
+
                         {ativa && sub.atributosOpcoes?.length > 0 && (
                           <div
                             onClick={(e) => e.stopPropagation()}
                             className="pt-2 border-t border-white/10 flex items-center gap-2 flex-wrap"
                           >
-                            <span className="text-[11px] text-zinc-300">
-                              Escolher Bônus (+1):
+                            <span className="text-[11px] text-emerald-300 font-semibold">
+                              Escolha qual atributo ganha +1:
                             </span>
                             {sub.atributosOpcoes.map((attr) => {
                               const campoAttr = isSub1
                                 ? "subclasse1AtributoEscolha"
                                 : "subclasse2AtributoEscolha";
+                              const valorAtual = sub.atributosOpcoes.includes(
+                                dados[campoAttr]
+                              )
+                                ? dados[campoAttr]
+                                : sub.atributosOpcoes[0];
+                              const escolhido = valorAtual === attr;
                               return (
                                 <button
                                   key={attr}
                                   type="button"
                                   onClick={() => atualizarCampo(campoAttr, attr)}
                                   className={`px-2.5 py-1 rounded-lg text-[11px] font-bold uppercase ${
-                                    dados[campoAttr] === attr
-                                      ? "bg-sky-600 text-white"
-                                      : "bg-zinc-800 text-zinc-400"
+                                    escolhido
+                                      ? "bg-emerald-600 text-white shadow"
+                                      : "bg-zinc-800 text-zinc-400 hover:text-white"
                                   }`}
                                 >
-                                  +1 {ATRIBUTOS_INFO[attr].sigla}
+                                  {escolhido ? "✓ " : ""}+1{" "}
+                                  {ATRIBUTOS_INFO[attr].sigla}
                                 </button>
                               );
                             })}
@@ -1180,7 +1460,7 @@ export function CriadorFichaAnoUm({
                                 )
                               }
                               placeholder={sub.requerDetalhe}
-                              className="w-full bg-zinc-900 border border-white/15 rounded-lg px-2.5 py-1.5 text-xs text-white"
+                              className="w-full bg-zinc-900 border border-white/15 rounded-lg px-2.5 py-1.5 text-xs text-white placeholder:text-zinc-500/75"
                             />
                           </div>
                         )}
@@ -1195,7 +1475,7 @@ export function CriadorFichaAnoUm({
       )}
 
       {/* =================================================================== */}
-      {/* PASSO 5 — MORAL, CONSCIÊNCIA, ALINHAMENTO, QUALIDADES E DEFEITOS    */}
+      {/* ETAPA 4 — MORAL, CONSCIÊNCIA, ALINHAMENTO, QUALIDADES E DEFEITOS    */}
       {/* =================================================================== */}
       {etapaAtiva === "passo5" && (
         <div className="space-y-5">
@@ -1203,7 +1483,7 @@ export function CriadorFichaAnoUm({
           <div className="bg-zinc-900/70 border border-white/10 rounded-2xl p-5 space-y-4">
             <div>
               <h3 className="text-base font-bold text-white">
-                Seção 2 & Passo 5 — Moral (Escala 1 a 6), Consciência (Escala 1 a 12) e Âncoras
+                Etapa 4 — Moral (Escala 1 a 6), Consciência (Escala 1 a 12) e Âncoras
               </h3>
               <p className="text-xs text-zinc-400 mt-0.5">
                 <strong>Moral Inicial = 3</strong> (máx. 6) • <strong>Consciência Inicial = 1</strong> (máx. 12; ao acumular 12 pontos, ganha +1 de Moral e volta para 1). <strong>Teste de Moral (1d6):</strong> você precisa tirar um número <strong>MENOR</strong> que a sua Moral atual (<code className="text-lime-300">Resultado &lt; Moral Atual</code>).
@@ -1288,13 +1568,17 @@ export function CriadorFichaAnoUm({
               </div>
             </div>
 
-            {/* As 3 Âncoras de Moral */}
+            {/* As 3 Âncoras de Moral (vazias com texto translúcido) */}
             <div className="space-y-2.5 pt-2">
               <label className="block text-xs font-bold text-lime-300">
-                As 3 Âncoras de Moral (Cada ponto inicial de Moral deve estar ligado a uma memória feliz, pessoa amada, promessa ou propósito):
+                As 3 Âncoras de Moral (Cada ponto inicial de Moral deve estar ligado a algo que mantém você humano):
               </label>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                {[0, 1, 2].map((idx) => (
+                {[
+                  "O que te motiva a continuar vivo? (pessoa amada, memória feliz...)",
+                  "Quem ou o que você jurou proteger custe o que custar?",
+                  "Qual promessa, fé ou propósito impede você de desistir?",
+                ].map((placeholderTexto, idx) => (
                   <div key={idx}>
                     <span className="text-[11px] text-zinc-400 block mb-1">
                       Âncora de Moral #{idx + 1}
@@ -1308,15 +1592,15 @@ export function CriadorFichaAnoUm({
                         novas[idx] = e.target.value;
                         atualizarCampo("ancorasMoral", novas);
                       }}
-                      placeholder={`Memória, pessoa amada ou promessa #${idx + 1}...`}
-                      className="w-full bg-zinc-950 border border-white/10 rounded-xl px-3 py-2 text-xs text-white"
+                      placeholder={placeholderTexto}
+                      className="w-full bg-zinc-950 border border-white/10 rounded-xl px-3 py-2 text-xs text-white placeholder:text-zinc-500/70"
                     />
                   </div>
                 ))}
               </div>
             </div>
 
-            {/* Alinhamento do Personagem (3 respostas) */}
+            {/* Alinhamento do Personagem (3 respostas vazias com texto translúcido) */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-2 border-t border-white/10">
               <div>
                 <label className="block text-xs font-bold text-emerald-300 mb-1">
@@ -1329,8 +1613,8 @@ export function CriadorFichaAnoUm({
                   onChange={(e) =>
                     atualizarCampo("alinhamentoCerto", e.target.value)
                   }
-                  placeholder="Ex.: proteger inocentes, cumprir a palavra..."
-                  className="w-full bg-zinc-950 border border-white/10 rounded-xl px-3 py-2 text-xs text-white"
+                  placeholder="O que é justo e correto para você?"
+                  className="w-full bg-zinc-950 border border-white/10 rounded-xl px-3 py-2 text-xs text-white placeholder:text-zinc-500/70"
                 />
               </div>
 
@@ -1345,8 +1629,8 @@ export function CriadorFichaAnoUm({
                   onChange={(e) =>
                     atualizarCampo("alinhamentoRepudia", e.target.value)
                   }
-                  placeholder="Ex.: covardia, abandonar um companheiro..."
-                  className="w-full bg-zinc-950 border border-white/10 rounded-xl px-3 py-2 text-xs text-white"
+                  placeholder="O que você jamais aceitaria fazer?"
+                  className="w-full bg-zinc-950 border border-white/10 rounded-xl px-3 py-2 text-xs text-white placeholder:text-zinc-500/70"
                 />
               </div>
 
@@ -1361,8 +1645,8 @@ export function CriadorFichaAnoUm({
                   onChange={(e) =>
                     atualizarCampo("alinhamentoTeme", e.target.value)
                   }
-                  placeholder="Ex.: morrer sozinho, perder a família, escuro..."
-                  className="w-full bg-zinc-950 border border-white/10 rounded-xl px-3 py-2 text-xs text-white"
+                  placeholder="Qual é o seu maior medo?"
+                  className="w-full bg-zinc-950 border border-white/10 rounded-xl px-3 py-2 text-xs text-white placeholder:text-zinc-500/70"
                 />
               </div>
             </div>
@@ -1523,7 +1807,7 @@ export function CriadorFichaAnoUm({
                                 })
                               }
                               placeholder={df.requerDetalhe}
-                              className="w-full bg-zinc-900 border border-white/15 rounded-lg px-2.5 py-1 text-xs text-white"
+                              className="w-full bg-zinc-900 border border-white/15 rounded-lg px-2.5 py-1 text-xs text-white placeholder:text-zinc-500/75"
                             />
                           </div>
                         )}
@@ -1538,7 +1822,7 @@ export function CriadorFichaAnoUm({
       )}
 
       {/* =================================================================== */}
-      {/* PASSO 6 — VIDA POR MEMBRO, INVENTÁRIO DE 1950 E PDF TEMA ZUMBI      */}
+      {/* ETAPA 7 — VIDA POR MEMBRO, INVENTÁRIO DE 1950 E PDF TEMA ZUMBI      */}
       {/* =================================================================== */}
       {etapaAtiva === "passo6" && (
         <div className="space-y-6">
@@ -1547,7 +1831,7 @@ export function CriadorFichaAnoUm({
             <div className="flex items-center justify-between flex-wrap gap-2">
               <div>
                 <h3 className="text-base font-bold text-white">
-                  Passo 6 — Cálculo de Pontos de Vida por Membro (Físico Base Final = {calc.atributosFinais.fisico})
+                  Etapa 7 — Pontos de Vida por Membro (Físico Base Final = {calc.atributosFinais.fisico})
                 </h3>
                 <p className="text-xs text-zinc-400">
                   No sistema Ano Um, o dano é localizado por parte do corpo. Seu Físico Base final ({calc.atributosFinais.fisico}) já foi somado automaticamente:
@@ -1618,8 +1902,8 @@ export function CriadorFichaAnoUm({
                   disabled={isReadOnly}
                   value={dados.kitRoupa1950}
                   onChange={(e) => atualizarCampo("kitRoupa1950", e.target.value)}
-                  placeholder="Terno de linho, macacão da fábrica, vestido, batina ou jaleco..."
-                  className="w-full bg-zinc-950 border border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-white"
+                  placeholder={`Que roupa você está vestindo? (ex.: ${calc.profissaoObj.sugestaoRoupa})`}
+                  className="w-full bg-zinc-950 border border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder:text-zinc-500/70"
                 />
               </div>
 
@@ -1634,8 +1918,8 @@ export function CriadorFichaAnoUm({
                   onChange={(e) =>
                     atualizarCampo("kitDocumentosDinheiro", e.target.value)
                   }
-                  placeholder="Carteira de Trabalho da Era Vargas ou identidade e Cr$ 100..."
-                  className="w-full bg-zinc-950 border border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-white"
+                  placeholder="Quais documentos e quantos Cruzeiros (Cr$) leva no bolso?"
+                  className="w-full bg-zinc-950 border border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder:text-zinc-500/70"
                 />
               </div>
 
@@ -1650,8 +1934,8 @@ export function CriadorFichaAnoUm({
                   onChange={(e) =>
                     atualizarCampo("kitObjetoSentimental", e.target.value)
                   }
-                  placeholder="Relógio de bolso, foto 3×4, terço, aliança, isqueiro gravado..."
-                  className="w-full bg-zinc-950 border border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-white"
+                  placeholder="Qual lembrança ligada à sua Âncora de Moral está com você?"
+                  className="w-full bg-zinc-950 border border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder:text-zinc-500/70"
                 />
               </div>
 
@@ -1666,8 +1950,8 @@ export function CriadorFichaAnoUm({
                   onChange={(e) =>
                     atualizarCampo("kitUtensilioProfissao", e.target.value)
                   }
-                  placeholder="Canivete pequeno, caderneta e lápis, caixa de fósforos, chave inglesa ou gaze..."
-                  className="w-full bg-zinc-950 border border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-white"
+                  placeholder={`Qual ferramenta de bolso leva? (ex.: ${calc.profissaoObj.sugestaoUtensilio})`}
+                  className="w-full bg-zinc-950 border border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder:text-zinc-500/70"
                 />
               </div>
             </div>
@@ -1791,8 +2075,13 @@ export function CriadorFichaAnoUm({
                 </p>
                 <p className="text-[11px] text-stone-400">
                   <strong>Origem/Sub:</strong>{" "}
-                  {calc.origemObj ? calc.origemObj.nome : ""}{" "}
-                  {calc.subclasse1Obj ? `• ${calc.subclasse1Obj.nome}` : ""}
+                  {[
+                    calc.origemObj?.nome,
+                    calc.subclasse1Obj?.nome,
+                    calc.subclasse2Obj?.nome,
+                  ]
+                    .filter(Boolean)
+                    .join(" • ") || "—"}
                 </p>
                 <p className="text-[11px] text-stone-400">
                   <strong>Qualidades:</strong>{" "}

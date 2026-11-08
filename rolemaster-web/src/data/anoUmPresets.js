@@ -916,8 +916,8 @@ export const ESTADO_INICIAL_ANO_UM = {
   sistema: "ano1",
   nome: "",
   nomeJogador: "",
-  idade: "28",
-  bairro1950: "São Miguel Paulista, SP",
+  idade: "",
+  bairro1950: "",
   retratoBase64: "",
   conexaoComGrupo: "",
 
@@ -925,48 +925,48 @@ export const ESTADO_INICIAL_ANO_UM = {
   ganchoId: 1,
   ganchoResposta: "",
 
-  // Passo 1: Atributos Base (1 inicial em cada + 6 pontos livres)
+  // Atributos Base (1 inicial em cada + 6 pontos livres distribuídos pelo jogador)
   pontosAtributoDist: {
-    fisico: 2,
-    inteligencia: 2,
-    social: 2,
+    fisico: 0,
+    inteligencia: 0,
+    social: 0,
   },
 
-  // Passo 2: Perícias (10 pontos livres, máx 6 na mesma perícia)
+  // Perícias (10 pontos livres, máx 6 na mesma perícia)
   periciasPontos: {
     acrobacia: 0,
-    armasBrancas: 1,
-    atletismo: 1,
+    armasBrancas: 0,
+    atletismo: 0,
     bloqueio: 0,
-    briga: 1,
-    esquiva: 1,
-    folegoVigor: 1,
+    briga: 0,
+    esquiva: 0,
+    folegoVigor: 0,
     prestidigitacao: 0,
-    armasDeFogo: 1,
+    armasDeFogo: 0,
     conducao: 0,
     conhecimentos: 0,
     cozinha: 0,
     fabricacao: 0,
-    furtividade: 1,
+    furtividade: 0,
     mecanica: 0,
-    medicina: 1,
-    percepcao: 1,
+    medicina: 0,
+    percepcao: 0,
     sobrevivencia: 0,
     adestramento: 0,
     charmeSeducao: 0,
     enganacao: 0,
     intimidacao: 0,
-    intuicao: 1,
+    intuicao: 0,
     lideranca: 0,
     persuasao: 0,
     psicologia: 0,
   },
 
-  // Passo 3: Profissão de 1950
+  // Profissão de 1950
   modalidadeProfissao: "atual", // 'atual' (+2 Atributo e +1 Defeito) | 'ex' (+1 Atributo, sem defeito extra)
   profissaoId: "operario",
 
-  // Passo 4: Origem e Subclasse
+  // Origem e Subclasses
   modoEstilo: "origem_subclasse", // 'origem_subclasse' | 'polivalente' | 'duas_subclasses'
   origemId: "imparavel",
   origemAtributoEscolha: "fisico",
@@ -978,30 +978,26 @@ export const ESTADO_INICIAL_ANO_UM = {
   subclasse2AtributoEscolha: "inteligencia",
   subclasse2Detalhe: "",
 
-  // Passo 5: Moral, Consciência, Alinhamento, Qualidades e Defeitos
+  // Moral, Consciência, Alinhamento, Qualidades e Defeitos (campos de escrita vazios)
   moralAtual: 3,
   conscienciaAtual: 1,
   moralDourada: 0,
-  ancorasMoral: [
-    "Minha mãe me esperando voltar para o jantar na vila operária",
-    "O relógio de bolso deixado pelo meu avô ferroviário",
-    "A promessa de descobrir o que aconteceu com meu primo transferido pela Ray Grave",
-  ],
-  alinhamentoCerto: "Proteger os trabalhadores inocentes e dividir o que tem",
-  alinhamentoRepudia: "Covardia, abandonar um companheiro ferido e mentiras corporativas",
-  alinhamentoTeme: "Morrer sozinho ou perder a própria sanidade diante do horror",
+  ancorasMoral: ["", "", ""],
+  alinhamentoCerto: "",
+  alinhamentoRepudia: "",
+  alinhamentoTeme: "",
 
-  qualidadesIds: ["atletaNato"],
+  qualidadesIds: [],
   determinacaoAtributo: "fisico",
-  defeitosIds: ["ansiedade", "insone"],
+  defeitosIds: [],
   membroCicatrizId: "pernaEsquerda",
   detalhesDefeitos: {},
 
-  // Passo 6: Kit Inicial de 1950 no Bolso no Dia do Comício
-  kitRoupa1950: "Macacão surrado da Nitro Química e botas de couro",
-  kitDocumentosDinheiro: "Carteira de Trabalho da Era Vargas e Cr$ 120 em dinheiro",
-  kitObjetoSentimental: "Relógio de bolso antigo com foto 3×4 da família",
-  kitUtensilioProfissao: "Chave de grifo pequena e caixa de fósforos",
+  // Kit Inicial de 1950 no Bolso no Dia do Comício (campos de escrita vazios)
+  kitRoupa1950: "",
+  kitDocumentosDinheiro: "",
+  kitObjetoSentimental: "",
+  kitUtensilioProfissao: "",
   notasExtras: "",
 };
 
@@ -1011,66 +1007,74 @@ export const ESTADO_INICIAL_ANO_UM = {
 export function calcularFichaAnoUm(dados) {
   const d = { ...ESTADO_INICIAL_ANO_UM, ...dados };
 
-  // 1. Inicial (1 em cada) + Distribuídos (6 pontos livres)
+  const bonusZero = () => ({ fisico: 0, inteligencia: 0, social: 0 });
+  const bonusInicial = { fisico: 1, inteligencia: 0 + 1, social: 1 };
+  const bonusProfissao = bonusZero();
+  const bonusOrigem = bonusZero();
+  const bonusSubclasse1 = bonusZero();
+  const bonusSubclasse2 = bonusZero();
+  const bonusQualidadesDefeitos = bonusZero();
+
+  // 1. Pontos Livres de Atributo (6 pontos)
   const distFis = Number(d.pontosAtributoDist?.fisico ?? 0);
   const distInt = Number(d.pontosAtributoDist?.inteligencia ?? 0);
   const distSoc = Number(d.pontosAtributoDist?.social ?? 0);
   const pontosAtributoGastos = distFis + distInt + distSoc;
   const pontosAtributoRestantes = 6 - pontosAtributoGastos;
 
-  let fis = 1 + distFis;
-  let int = 1 + distInt;
-  let soc = 1 + distSoc;
-
-  // 2. Bônus do Passo 3 (Profissão Atual = +2 | Ex-Profissão = +1)
+  // 2. Bônus da Profissão (Profissão Atual = +2 | Ex-Profissão = +1)
   const profissaoObj =
     PROFISSOES_1950.find((p) => p.id === d.profissaoId) || PROFISSOES_1950[0];
   const bonusProfissaoValor = d.modalidadeProfissao === "atual" ? 2 : 1;
-  if (profissaoObj.atributo === "fisico") fis += bonusProfissaoValor;
-  if (profissaoObj.atributo === "inteligencia") int += bonusProfissaoValor;
-  if (profissaoObj.atributo === "social") soc += bonusProfissaoValor;
+  if (profissaoObj.atributo === "fisico") bonusProfissao.fisico += bonusProfissaoValor;
+  if (profissaoObj.atributo === "inteligencia") bonusProfissao.inteligencia += bonusProfissaoValor;
+  if (profissaoObj.atributo === "social") bonusProfissao.social += bonusProfissaoValor;
 
-  // 3. Bônus do Passo 4 (Origem e Subclasses)
-  const modoEstilo =
-    d.origemId === "polivalente" ? "polivalente" : d.modoEstilo;
+  // 3. Bônus de Origem e Subclasses
+  const modoEstilo = d.modoEstilo || "origem_subclasse";
 
   const origemObj =
     modoEstilo === "duas_subclasses"
       ? null
       : modoEstilo === "polivalente"
         ? ORIGENS_LIVRO.find((o) => o.id === "polivalente")
-        : ORIGENS_LIVRO.find((o) => o.id === d.origemId) || ORIGENS_LIVRO[1];
+        : ORIGENS_LIVRO.find(
+            (o) => o.id === d.origemId && o.id !== "polivalente"
+          ) || ORIGENS_LIVRO[1];
 
   const subclasse1Obj =
     modoEstilo === "polivalente"
       ? null
-      : SUBCLASSES_LIVRO.find((s) => s.id === d.subclasse1Id) || SUBCLASSES_LIVRO[0];
+      : SUBCLASSES_LIVRO.find((s) => s.id === d.subclasse1Id) || null;
 
   const subclasse2Obj =
-    modoEstilo === "duas_subclasses"
-      ? SUBCLASSES_LIVRO.find((s) => s.id === d.subclasse2Id) || SUBCLASSES_LIVRO[1]
+    modoEstilo === "duas_subclasses" &&
+    d.subclasse2Id &&
+    d.subclasse2Id !== d.subclasse1Id
+      ? SUBCLASSES_LIVRO.find((s) => s.id === d.subclasse2Id) || null
       : null;
 
-  const aplicarBonusItem = (item, escolhaAtributo) => {
+  const extrairBonusItem = (item, escolhaAtributo, destino) => {
     if (!item) return;
-    if (item.bonusFixo?.fisico) fis += item.bonusFixo.fisico;
-    if (item.bonusFixo?.inteligencia) int += item.bonusFixo.inteligencia;
-    if (item.bonusFixo?.social) soc += item.bonusFixo.social;
+    if (item.bonusFixo?.fisico) destino.fisico += item.bonusFixo.fisico;
+    if (item.bonusFixo?.inteligencia)
+      destino.inteligencia += item.bonusFixo.inteligencia;
+    if (item.bonusFixo?.social) destino.social += item.bonusFixo.social;
     if (item.atributosOpcoes?.length > 0) {
       const attr = item.atributosOpcoes.includes(escolhaAtributo)
         ? escolhaAtributo
         : item.atributosOpcoes[0];
-      if (attr === "fisico") fis += 1;
-      if (attr === "inteligencia") int += 1;
-      if (attr === "social") soc += 1;
+      if (attr === "fisico") destino.fisico += 1;
+      if (attr === "inteligencia") destino.inteligencia += 1;
+      if (attr === "social") destino.social += 1;
     }
   };
 
-  aplicarBonusItem(origemObj, d.origemAtributoEscolha);
-  aplicarBonusItem(subclasse1Obj, d.subclasse1AtributoEscolha);
-  aplicarBonusItem(subclasse2Obj, d.subclasse2AtributoEscolha);
+  extrairBonusItem(origemObj, d.origemAtributoEscolha, bonusOrigem);
+  extrairBonusItem(subclasse1Obj, d.subclasse1AtributoEscolha, bonusSubclasse1);
+  extrairBonusItem(subclasse2Obj, d.subclasse2AtributoEscolha, bonusSubclasse2);
 
-  // 4. Bônus do Passo 5 (Qualidades e Defeitos)
+  // 4. Bônus de Qualidades e Defeitos
   const qualidadesSelecionadas = (d.qualidadesIds || [])
     .map((id) => QUALIDADES_LIVRO.find((q) => q.id === id))
     .filter(Boolean);
@@ -1079,22 +1083,56 @@ export function calcularFichaAnoUm(dados) {
     .filter(Boolean);
 
   for (const q of qualidadesSelecionadas) {
-    if (q.bonusAtributo?.fisico) fis += q.bonusAtributo.fisico;
-    if (q.bonusAtributo?.inteligencia) int += q.bonusAtributo.inteligencia;
-    if (q.bonusAtributo?.social) soc += q.bonusAtributo.social;
+    if (q.bonusAtributo?.fisico)
+      bonusQualidadesDefeitos.fisico += q.bonusAtributo.fisico;
+    if (q.bonusAtributo?.inteligencia)
+      bonusQualidadesDefeitos.inteligencia += q.bonusAtributo.inteligencia;
+    if (q.bonusAtributo?.social)
+      bonusQualidadesDefeitos.social += q.bonusAtributo.social;
     if (q.escolheAtributo) {
       const attr = d.determinacaoAtributo || "fisico";
-      if (attr === "fisico") fis += 1;
-      if (attr === "inteligencia") int += 1;
-      if (attr === "social") soc += 1;
+      if (attr === "fisico") bonusQualidadesDefeitos.fisico += 1;
+      if (attr === "inteligencia") bonusQualidadesDefeitos.inteligencia += 1;
+      if (attr === "social") bonusQualidadesDefeitos.social += 1;
     }
   }
 
   for (const df of defeitosSelecionados) {
-    if (df.bonusAtributo?.fisico) fis += df.bonusAtributo.fisico;
-    if (df.bonusAtributo?.inteligencia) int += df.bonusAtributo.inteligencia;
-    if (df.bonusAtributo?.social) soc += df.bonusAtributo.social;
+    if (df.bonusAtributo?.fisico)
+      bonusQualidadesDefeitos.fisico += df.bonusAtributo.fisico;
+    if (df.bonusAtributo?.inteligencia)
+      bonusQualidadesDefeitos.inteligencia += df.bonusAtributo.inteligencia;
+    if (df.bonusAtributo?.social)
+      bonusQualidadesDefeitos.social += df.bonusAtributo.social;
   }
+
+  const baseAntesLivres = {
+    fisico:
+      bonusInicial.fisico +
+      bonusProfissao.fisico +
+      bonusOrigem.fisico +
+      bonusSubclasse1.fisico +
+      bonusSubclasse2.fisico +
+      bonusQualidadesDefeitos.fisico,
+    inteligencia:
+      bonusInicial.inteligencia +
+      bonusProfissao.inteligencia +
+      bonusOrigem.inteligencia +
+      bonusSubclasse1.inteligencia +
+      bonusSubclasse2.inteligencia +
+      bonusQualidadesDefeitos.inteligencia,
+    social:
+      bonusInicial.social +
+      bonusProfissao.social +
+      bonusOrigem.social +
+      bonusSubclasse1.social +
+      bonusSubclasse2.social +
+      bonusQualidadesDefeitos.social,
+  };
+
+  let fis = baseAntesLivres.fisico + distFis;
+  let int = baseAntesLivres.inteligencia + distInt;
+  let soc = baseAntesLivres.social + distSoc;
 
   const isImparavel = origemObj?.id === "imparavel";
   fis = Math.max(0, Math.min(isImparavel ? 25 : 20, fis));
@@ -1213,6 +1251,20 @@ export function calcularFichaAnoUm(dados) {
       inteligencia: int,
       social: soc,
     },
+    detalhamentoAtributos: {
+      inicial: bonusInicial,
+      profissao: bonusProfissao,
+      origem: bonusOrigem,
+      subclasse1: bonusSubclasse1,
+      subclasse2: bonusSubclasse2,
+      qualidadesDefeitos: bonusQualidadesDefeitos,
+      baseAntesLivres,
+      livres: {
+        fisico: distFis,
+        inteligencia: distInt,
+        social: distSoc,
+      },
+    },
     conversao: {
       fisico: convFis,
       inteligencia: convInt,
@@ -1235,6 +1287,7 @@ export function calcularFichaAnoUm(dados) {
     defeitosSelecionados,
     defeitosObrigatorios,
     partesCorpoCalculadas,
+    pvPartes: partesCorpoCalculadas,
     espacosInventario,
   };
 }
